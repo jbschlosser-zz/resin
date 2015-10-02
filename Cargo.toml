@@ -1,0 +1,4 @@
+[package]
+name = "resin"
+version = "0.1.0"
+authors = ["Joel Schlosser <jbschlosser@gmail.com>"]
