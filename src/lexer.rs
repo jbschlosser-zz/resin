@@ -2,7 +2,7 @@ use std::fmt;
 use std::iter::Peekable;
 
 #[derive(PartialEq, Eq, Debug)]
-enum Token {
+pub enum Token {
     OpenParen,
     OpenVectorParen,
     CloseParen,
@@ -15,11 +15,10 @@ enum Token {
     Quote,
     Quasiquote,
     Unquote,
-    UnquoteList,
-    EOF
+    UnquoteList
 }
 
-struct SyntaxError {
+pub struct SyntaxError {
     msg: String,
     line: u64,
     column: u64
@@ -34,7 +33,8 @@ impl fmt::Debug for SyntaxError {
 
 macro_rules! syntax_error {
     ($lexer:ident, $($arg:tt)*) => (
-        return Err(SyntaxError{msg: format!($($arg)*), line: $lexer.line, column: $lexer.column})
+        return Err(SyntaxError{msg: format!($($arg)*), line: $lexer.line,
+            column: $lexer.column})
     )
 }
 
@@ -53,45 +53,45 @@ impl<I: Iterator<Item=char>> Lexer<I> {
         let mut tokens = Vec::new();
         loop {
             match try!(self.lex_token()) {
-                Token::EOF => return Ok(tokens),
-                t @ _ => tokens.push(t)
+                Some(t) => tokens.push(t),
+                None => return Ok(tokens)
             }
         }
     }
 
-    pub fn lex_token(&mut self) -> Result<Token, SyntaxError> {
+    pub fn lex_token(&mut self) -> Result<Option<Token>, SyntaxError> {
         self.read_while(|c| c.is_whitespace());
 
         let ch = match self.next_char() {
             Some(c) => c,
-            None => return Ok(Token::EOF)
+            None => return Ok(None)
         };
 
         match ch {
-            '(' => return Ok(Token::OpenParen),
-            ')' => return Ok(Token::CloseParen),
-            '\'' => return Ok(Token::Quote),
-            '`' => return Ok(Token::Quasiquote),
+            '(' => Ok(Some(Token::OpenParen)),
+            ')' => Ok(Some(Token::CloseParen)),
+            '\'' => Ok(Some(Token::Quote)),
+            '`' => Ok(Some(Token::Quasiquote)),
             ',' => {
                 match self.input.peek() {
                     Some(&'@') => {
                         self.next_char().unwrap();
-                        return Ok(Token::UnquoteList);
+                        Ok(Some(Token::UnquoteList))
                     },
-                    _ => return Ok(Token::Unquote)
+                    _ => Ok(Some(Token::Unquote))
                 }
             },
             // Skip these characters; they're reserved for future use.
-            '[' | ']' | '{' | '}' | '|' => return self.lex_token(),
+            '[' | ']' | '{' | '}' | '|' => self.lex_token(),
             // Deal with the various hash lexes.
             '#' => {
                 match self.next_char() {
-                    Some('t') => return Ok(Token::Boolean(true)),
-                    Some('f') => return Ok(Token::Boolean(false)),
-                    Some('(') => return Ok(Token::OpenVectorParen),
+                    Some('t') => Ok(Some(Token::Boolean(true))),
+                    Some('f') => Ok(Some(Token::Boolean(false))),
+                    Some('(') => Ok(Some(Token::OpenVectorParen)),
                     Some('\\') => {
                         match self.next_char() {
-                            Some(c) => return Ok(Token::Character(c)),
+                            Some(c) => Ok(Some(Token::Character(c))),
                             None => syntax_error!(self,
                                 "Expected character after #\\")
                         }
@@ -105,7 +105,7 @@ impl<I: Iterator<Item=char>> Lexer<I> {
             // Skip the rest of the line for the comment.
             ';' => {
                 self.read_while(|c| c != '\n');
-                return self.lex_token();
+                self.lex_token()
             },
             // Handle dots and ellipses.
             '.' => {
@@ -114,37 +114,38 @@ impl<I: Iterator<Item=char>> Lexer<I> {
                         // Check for ellipses ...
                         self.next_char().unwrap();
                         match self.input.next() {
-                            Some('.') => return Ok(Token::Identifier(
-                                String::from("..."))),
+                            Some('.') => Ok(Some(Token::Identifier(
+                                String::from("...")))),
                             _ => syntax_error!(self,
                                 "Identifiers cannot begin with .")
                         }
                     },
                     Some(&d) if is_identifier_char(d) =>
                         syntax_error!(self, "Identifiers cannot begin with ."),
-                    _ => return Ok(Token::Dot)
+                    _ => Ok(Some(Token::Dot))
                 }
             },
             // Lex string.
-            '"' => Ok(try!(self.lex_string())),
+            '"' => Ok(Some(try!(self.lex_string()))),
             // Lex number.
-            c if c.is_digit(10) => Ok(try!(self.lex_number(c))),
+            c if c.is_digit(10) => Ok(Some(try!(self.lex_number(c)))),
             // +/- can indicate the beginning of a number or be an identifier.
             c if c == '+' || c == '-' => {
                 match self.input.peek() {
-                    Some(&d) if d.is_digit(10) => Ok(try!(self.lex_number(c))),
+                    Some(&d) if d.is_digit(10) =>
+                        Ok(Some(try!(self.lex_number(c)))),
                     Some(&d) if is_identifier_char(d) => syntax_error!(self,
                         "Identifiers cannot begin with +/-"),
                     _ => {
                         let mut s = String::new();
                         s.push(c);
-                        Ok(Token::Identifier(s))
+                        Ok(Some(Token::Identifier(s)))
                     }
                 }
             },
             // Lex identifier. Note that identifiers cannot start with a digit,
             // a plus sign, a minus sign, or a dot. Those are lexed higher up.
-            c if is_identifier_char(c) => return Ok(self.lex_identifier(c)),
+            c if is_identifier_char(c) => Ok(Some(self.lex_identifier(c))),
             _ => unimplemented!()
         }
     }
