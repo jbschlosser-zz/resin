@@ -39,20 +39,25 @@ impl<I: Iterator<Item=Token>> Parser<I> {
             Some(Token::Number(n)) => Ok(Some(Value::Number(n))),
             Some(Token::Boolean(b)) => Ok(Some(Value::Boolean(b))),
             Some(Token::OpenParen) => Ok(Some(try!(self.parse_list()))),
+            Some(Token::CloseParen) => parse_error!("Unexpected closing paren"),
             Some(_) => unimplemented!(),
             None => Ok(None)
         }
     }
 
-    fn consume_if(&mut self, token: &Token) -> bool {
-        let res = self.tokens.peek().map_or(false, |t| t == token);
-        if res {
-            self.tokens.next().unwrap();
-        }
-        res
-    }
-
     fn parse_list(&mut self) -> Result<Value, ParseError> {
-        return Ok(Value::Nil);
+        match self.tokens.peek() {
+            Some(&Token::CloseParen) => {
+                // Consume closing paren.
+                self.tokens.next();
+                Ok(Value::Nil)
+            },
+            Some(_) => {
+                let car = try!(self.parse_value()).unwrap();
+                let cdr = try!(self.parse_list());
+                Ok(Value::Pair(Box::new(car), Box::new(cdr)))
+            },
+            None => parse_error!("Expected closing paren")
+        }
     }
 }
