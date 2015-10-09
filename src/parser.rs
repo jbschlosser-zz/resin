@@ -5,13 +5,13 @@ use std::cell::RefCell;
 use std::iter::Peekable;
 use std::rc::Rc;
 
-struct Parser<I: Iterator<Item=Token>> {
+pub struct Parser<I: Iterator<Item=Token>> {
     tokens: Peekable<I>
 }
 
 #[derive(Debug, PartialEq, Eq)]
 struct ParseError {
-    msg: String
+    pub msg: String
 }
 
 macro_rules! parse_error {

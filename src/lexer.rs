@@ -19,9 +19,9 @@ pub enum Token {
 }
 
 pub struct SyntaxError {
-    msg: String,
-    line: u64,
-    column: u64
+    pub msg: String,
+    pub line: u64,
+    pub column: u64
 }
 
 impl fmt::Debug for SyntaxError {
