@@ -1,7 +1,7 @@
 use std::fmt;
 use std::iter::Peekable;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Token {
     OpenParen,
     OpenVectorParen,

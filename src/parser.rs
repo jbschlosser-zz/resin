@@ -1,6 +1,8 @@
+use datum::Datum;
 use lexer::{self, Token};
+use std::cell::RefCell;
 use std::iter::Peekable;
-use value::Value;
+use std::rc::Rc;
 
 struct Parser<I: Iterator<Item=Token>> {
     tokens: Peekable<I>
@@ -21,43 +23,87 @@ impl<I: Iterator<Item=Token>> Parser<I> {
         Parser {tokens: tokens.peekable()}
     }
 
-    pub fn parse_all(&mut self) -> Result<Vec<Value>, ParseError> {
+    pub fn parse_all(&mut self) -> Result<Vec<Datum>, ParseError> {
         let mut values = Vec::new();
         loop {
-            match try!(self.parse_value()) {
-                Some(v) => values.push(v),
-                None => return Ok(values)
-            }
+            if self.tokens.peek() == None { return Ok(values); }
+            values.push(try!(self.parse_datum()));
         }
     }
 
-    pub fn parse_value(&mut self) -> Result<Option<Value>, ParseError> {
+    pub fn parse_datum(&mut self) -> Result<Datum, ParseError> {
         match self.tokens.next() {
-            Some(Token::Identifier(s)) => Ok(Some(Value::Symbol(s))),
-            Some(Token::String(s)) => Ok(Some(Value::String(s))),
-            Some(Token::Character(c)) => Ok(Some(Value::Character(c))),
-            Some(Token::Number(n)) => Ok(Some(Value::Number(n))),
-            Some(Token::Boolean(b)) => Ok(Some(Value::Boolean(b))),
-            Some(Token::OpenParen) => Ok(Some(try!(self.parse_list()))),
+            Some(Token::Identifier(s)) => Ok(Datum::Symbol(s)),
+            Some(Token::String(s)) => Ok(Datum::String(s)),
+            Some(Token::Character(c)) => Ok(Datum::Character(c)),
+            Some(Token::Number(n)) => Ok(Datum::Number(n)),
+            Some(Token::Boolean(b)) => Ok(Datum::Boolean(b)),
+            Some(Token::OpenParen) => Ok(try!(self.parse_list())),
             Some(Token::CloseParen) => parse_error!("Unexpected closing paren"),
-            Some(_) => unimplemented!(),
-            None => Ok(None)
+            Some(Token::OpenVectorParen) => Ok(try!(self.parse_vector())),
+            Some(Token::Dot) => parse_error!("Unexpected dot"),
+            Some(Token::Quote) => {
+                let car = Datum::Symbol("quote".to_string());
+                let cdar = try!(self.parse_datum());
+                Ok(Datum::pair(car, Datum::pair(cdar, Datum::EmptyList)))
+            },
+            Some(Token::Quasiquote) => {
+                let car = Datum::Symbol("quasiquote".to_string());
+                let cdar = try!(self.parse_datum());
+                Ok(Datum::pair(car, Datum::pair(cdar, Datum::EmptyList)))
+            },
+            Some(Token::Unquote) => {
+                let car = Datum::Symbol("unquote".to_string());
+                let cdar = try!(self.parse_datum());
+                Ok(Datum::pair(car, Datum::pair(cdar, Datum::EmptyList)))
+            },
+            Some(Token::UnquoteList) => {
+                let car = Datum::Symbol("unquote-splicing".to_string());
+                let cdar = try!(self.parse_datum());
+                Ok(Datum::pair(car, Datum::pair(cdar, Datum::EmptyList)))
+            },
+            None => parse_error!("Expected datum or closing parenthesis")
         }
     }
 
-    fn parse_list(&mut self) -> Result<Value, ParseError> {
-        match self.tokens.peek() {
-            Some(&Token::CloseParen) => {
-                // Consume closing paren.
-                self.tokens.next();
-                Ok(Value::Nil)
-            },
-            Some(_) => {
-                let car = try!(self.parse_value()).unwrap();
-                let cdr = try!(self.parse_list());
-                Ok(Value::Pair(Box::new(car), Box::new(cdr)))
-            },
-            None => parse_error!("Expected closing paren")
+    fn parse_list(&mut self) -> Result<Datum, ParseError> {
+        if self.consume_if(|t| t == Token::OpenParen) {
+            return Ok(Datum::EmptyList);
         }
+
+        let car = try!(self.parse_datum());
+        let cdr = if self.consume_if(|t| t == Token::Dot) {
+            let cdr = try!(self.parse_datum());
+            if !self.consume_if(|t| t == Token::CloseParen) {
+                parse_error!("Expected closing parenthesis");
+            }
+            cdr
+        } else {
+            try!(self.parse_list())
+        };
+        Ok(Datum::Pair(Box::new(car), Box::new(cdr)))
+    }
+
+    fn parse_vector(&mut self) -> Result<Datum, ParseError> {
+        let mut vec = Vec::new();
+        loop {
+            if self.consume_if(|t| t == Token::CloseParen) {
+                return Ok(Datum::Vector(Rc::new(RefCell::new(vec))));
+            }
+            vec.push(try!(self.parse_datum()));
+        }
+    }
+
+    // Consumes if the token matches the given predicate; does nothing
+    // otherwise.
+    fn consume_if<F: Fn(Token) -> bool>(&mut self, pred: F) -> bool {
+        let consume = match self.tokens.peek() {
+            Some(t) => pred(t.clone()),
+            _ => false
+        };
+        if consume {
+            self.tokens.next().unwrap();
+        }
+        consume
     }
 }
