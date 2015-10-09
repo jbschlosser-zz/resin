@@ -1,4 +1,3 @@
-#[macro_use]
 use error::RuntimeError;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -51,6 +50,7 @@ use std::fmt;
 impl fmt::Debug for Procedure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            // TODO: Implement this properly.
             Procedure::Native(..) => write!(f, "#<procedure-native>"),
             Procedure::Scheme(..) => write!(f, "#<procedure-scheme>")
         }
@@ -58,7 +58,8 @@ impl fmt::Debug for Procedure {
 }
 
 impl PartialEq for Procedure {
-    fn eq(&self, other: &Procedure) -> bool {
+    fn eq(&self, _: &Procedure) -> bool {
+        // TODO: Fix this.
         true
     }
 }

@@ -1,6 +1,4 @@
-#[macro_use]
-use datum::{Datum, Environment, Procedure};
-#[macro_use]
+use datum::{Datum, Environment};
 use builtin;
 use error::RuntimeError;
 use lexer::Lexer;

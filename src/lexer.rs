@@ -171,10 +171,10 @@ impl<I: Iterator<Item=char>> Lexer<I> {
     {
         let mut s = String::new();
         loop {
-            let next = match self.input.peek() {
-                Some(c) if pred(*c) => *c,
+            match self.input.peek() {
+                Some(c) if pred(*c) => (),
                 _ => return s
-            };
+            }
 
             s.push(self.next_char().unwrap());
         }
@@ -220,7 +220,8 @@ impl<I: Iterator<Item=char>> Lexer<I> {
         s.push_str(&self.read_while(|c| c.is_digit(10)));
         match i64::from_str_radix(&s, 10) {
             Ok(n) => Ok(Token::Number(n)),
-            Err(e) => syntax_error!(self, "Integer not in valid form")
+            Err(e) => syntax_error!(self, "Integer not in valid form: {}",
+                e.to_string())
         }
     }
 }

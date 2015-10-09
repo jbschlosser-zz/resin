@@ -1,6 +1,5 @@
-#[macro_use]
-use datum::{self, Datum};
-use lexer::{self, Token};
+use datum::Datum;
+use lexer::Token;
 use std::cell::RefCell;
 use std::iter::Peekable;
 use std::rc::Rc;
