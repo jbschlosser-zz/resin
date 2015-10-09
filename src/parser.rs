@@ -8,6 +8,7 @@ struct Parser<I: Iterator<Item=Token>> {
     tokens: Peekable<I>
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct ParseError {
     msg: String
 }
@@ -67,7 +68,7 @@ impl<I: Iterator<Item=Token>> Parser<I> {
     }
 
     fn parse_list(&mut self) -> Result<Datum, ParseError> {
-        if self.consume_if(|t| t == Token::OpenParen) {
+        if self.consume_if(|t| t == Token::CloseParen) {
             return Ok(Datum::EmptyList);
         }
 
@@ -106,4 +107,49 @@ impl<I: Iterator<Item=Token>> Parser<I> {
         }
         consume
     }
+}
+
+macro_rules! check_parse {
+    ($input:expr, $result:expr) => {{
+        let mut lexer = lexer::Lexer::new($input.chars());
+        let tokens: Vec<Token> = lexer.lex_all().ok().expect("Failed to lex input");
+        let mut parser = Parser::new(tokens.into_iter());
+        let data = parser.parse_all();
+        assert!(data == $result);
+    }}
+}
+
+#[test]
+fn parse_empty_list() {
+    check_parse!("()", Ok(vec![Datum::EmptyList]));
+}
+
+#[test]
+fn parse_basic_list() {
+    check_parse!("(+ 2 2)", Ok(vec![
+        Datum::pair(
+            Datum::Symbol("+".to_string()),
+            Datum::pair(
+                Datum::Number(2),
+                Datum::pair(
+                    Datum::Number(2),
+                    Datum::EmptyList)))]));
+}
+
+#[test]
+fn parse_nested_list() {
+    check_parse!("(+ 2 (* 3 4))", Ok(vec![
+        Datum::pair(
+            Datum::Symbol("+".to_string()),
+            Datum::pair(
+                Datum::Number(2),
+                Datum::pair(
+                    Datum::pair(
+                        Datum::Symbol("*".to_string()),
+                        Datum::pair(
+                            Datum::Number(3),
+                            Datum::pair(
+                                Datum::Number(4),
+                                Datum::EmptyList))),
+                    Datum::EmptyList)))]));
 }

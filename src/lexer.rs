@@ -413,7 +413,6 @@ fn lex_string_split_across_lines() {
     let mut lexer = Lexer::new(s.chars());
     let tokens = lexer.lex_all();
     let error = tokens.err().unwrap();
-    println!("error: {:?}", error);
     assert!(error.line == 2 && error.column == 1);
 }
 

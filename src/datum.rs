@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Datum {
     Symbol(String),
     String(String),
@@ -28,10 +28,28 @@ pub enum Procedure {
     Scheme(Vec<String>, Vec<Datum>, Rc<RefCell<Environment>>)
 }
 
+use std::fmt;
+impl fmt::Debug for Procedure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Procedure::Native(..) => write!(f, "#<procedure-native>"),
+            Procedure::Scheme(..) => write!(f, "#<procedure-scheme>")
+        }
+    }
+}
+
+impl PartialEq for Procedure {
+    fn eq(&self, other: &Procedure) -> bool {
+        true
+    }
+}
+impl Eq for Procedure {}
+
 pub struct RuntimeError {
     msg: String
 }
 
+#[derive(Debug)]
 pub struct Environment {
     parent: Option<Rc<RefCell<Environment>>>,
     bindings: HashMap<String, Datum>
