@@ -2,6 +2,17 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[macro_export]
+macro_rules! list {
+    () => {{ Datum::EmptyList }};
+
+    ($datum:expr) => ( Datum::pair($datum, Datum::EmptyList) );
+
+    ($first:expr, $($rest:expr),+) => {{
+        Datum::pair($first, list!($($rest),+))
+    }};
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Datum {
     Symbol(String),
@@ -18,6 +29,9 @@ pub enum Datum {
 impl Datum {
     pub fn pair(d1: Datum, d2: Datum) -> Datum {
         Datum::Pair(Box::new(d1), Box::new(d2))
+    }
+    pub fn symbol(s: &str) -> Datum {
+        Datum::Symbol(s.to_string())
     }
 }
 

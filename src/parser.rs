@@ -1,4 +1,5 @@
-use datum::Datum;
+#[macro_use]
+use datum::{self, Datum};
 use lexer::{self, Token};
 use std::cell::RefCell;
 use std::iter::Peekable;
@@ -126,30 +127,13 @@ fn parse_empty_list() {
 
 #[test]
 fn parse_basic_list() {
-    check_parse!("(+ 2 2)", Ok(vec![
-        Datum::pair(
-            Datum::Symbol("+".to_string()),
-            Datum::pair(
-                Datum::Number(2),
-                Datum::pair(
-                    Datum::Number(2),
-                    Datum::EmptyList)))]));
+    check_parse!("(+ 2 3)", Ok(vec![
+        list!(Datum::symbol("+"), Datum::Number(2), Datum::Number(3))]));
 }
 
 #[test]
 fn parse_nested_list() {
     check_parse!("(+ 2 (* 3 4))", Ok(vec![
-        Datum::pair(
-            Datum::Symbol("+".to_string()),
-            Datum::pair(
-                Datum::Number(2),
-                Datum::pair(
-                    Datum::pair(
-                        Datum::Symbol("*".to_string()),
-                        Datum::pair(
-                            Datum::Number(3),
-                            Datum::pair(
-                                Datum::Number(4),
-                                Datum::EmptyList))),
-                    Datum::EmptyList)))]));
+        list!(Datum::symbol("+"), Datum::Number(2),
+            list!(Datum::symbol("*"), Datum::Number(3), Datum::Number(4)))]));
 }

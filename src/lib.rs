@@ -1,3 +1,6 @@
+#[macro_use]
+mod datum;
 mod lexer;
 mod parser;
-mod datum;
+
+pub use datum::Datum;
