@@ -111,8 +111,9 @@ impl<I: Iterator<Item=Token>> Parser<I> {
 
 macro_rules! check_parse {
     ($input:expr, $result:expr) => {{
-        let mut lexer = lexer::Lexer::new($input.chars());
-        let tokens: Vec<Token> = lexer.lex_all().ok().expect("Failed to lex input");
+        use lexer::Lexer;
+        let mut lexer = Lexer::new($input.chars());
+        let tokens = lexer.lex_all().ok().expect("Failed to lex input");
         let mut parser = Parser::new(tokens.into_iter());
         let data = parser.parse_all();
         assert!(data == $result);

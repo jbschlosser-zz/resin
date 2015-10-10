@@ -1,5 +1,5 @@
-use datum::{Datum, Environment};
 use builtin;
+use datum::{Datum, Environment};
 use error::RuntimeError;
 use lexer::Lexer;
 use parser::Parser;
@@ -51,7 +51,7 @@ impl Interpreter {
             }
 
             match res {
-                Ok(d) => Ok(format!("{:?}", d)),
+                Ok(d) => Ok(format!("{}", d)),
                 Err(e) => return Err(e.msg)
             }
         });

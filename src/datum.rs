@@ -1,6 +1,7 @@
 use error::RuntimeError;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 use std::rc::Rc;
 
 #[macro_export]
@@ -27,6 +28,53 @@ pub enum Datum {
     EmptyList
 }
 
+impl fmt::Display for Datum {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Datum::Symbol(ref s) => write!(f, "{}", &s),
+            &Datum::String(ref s) => write!(f, "\"{}\"", &s),
+            &Datum::Character(ref c) => write!(f, "\\#{}", c),
+            &Datum::Number(ref n) => write!(f, "{}", n),
+            &Datum::Boolean(ref b) => write!(f, "#{}", if *b {'t'} else {'f'}),
+            &Datum::Vector(ref v) => {
+                use std::ops::Deref;
+                try!(write!(f, "#("));
+                let borrowed = v.borrow();
+                let vec = borrowed.deref();
+                for (index, d) in vec.iter().enumerate() {
+                    try!(d.fmt(f));
+                    if index < vec.len() - 1 {
+                        try!(write!(f, " "));
+                    }
+                }
+                write!(f, ")")
+            },
+            &Datum::Procedure(_) => write!(f, "#<procedure>"),
+            &Datum::Pair(ref car, ref cdr) => {
+                let car_str = format!("{}", car);
+                let cdr_str = format!("{}", cdr);
+
+                try!(write!(f, "("));
+                if cdr_str.chars().next() == Some('(') {
+                    // If the cdr is a list, leave out the . and parentheses.
+                    try!(write!(f, "{}", &car_str));
+                    match **cdr {
+                        Datum::EmptyList => (),
+                        _ => try!(write!(f, " "))
+                    }
+                    try!(write!(f, "{}", &cdr_str[1..cdr_str.len() - 1]));
+                } else {
+                    try!(write!(f, "{}", &car_str));
+                    try!(write!(f, " . "));
+                    try!(write!(f, "{}", &cdr_str));
+                }
+                write!(f, ")")
+            },
+            &Datum::EmptyList => write!(f, "()"),
+        }
+    }
+}
+
 impl Datum {
     pub fn pair(d1: Datum, d2: Datum) -> Datum {
         Datum::Pair(Box::new(d1), Box::new(d2))
@@ -46,7 +94,6 @@ pub enum Procedure {
     Scheme(Vec<String>, Vec<Datum>, Rc<RefCell<Environment>>)
 }
 
-use std::fmt;
 impl fmt::Debug for Procedure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -91,7 +138,7 @@ impl Environment {
             match self.parent {
                 Some(ref p) => p.borrow_mut().set(name, datum),
                 None => runtime_error!(
-                    "Attempted to set! an undefined variable: {:?}", datum)
+                    "Attempted to set! an undefined variable: {}", datum)
             }
         }
     }
@@ -113,17 +160,16 @@ impl Environment {
             &Datum::Symbol(ref s) => {
                 match env.borrow().get(s) {
                     Some(d) => Ok(d),
-                    None => runtime_error!("Undefined identifier: {:?}", datum)
+                    None => runtime_error!("Undefined identifier: {}", datum)
                 }
             },
             d @ &Datum::String(_) | d @ &Datum::Character(_) |
             d @ &Datum::Number(_) | d @ &Datum::Boolean(_) |
-            d @ &Datum::Procedure(_) => Ok(d.clone()),
+            d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) => Ok(d.clone()),
             &Datum::Pair(ref car, ref cdr) =>
                 Self::evaluate_expression(env.clone(), car, cdr),
             &Datum::EmptyList =>
                 runtime_error!("Cannot evaluate empty list ()"),
-            _ => unimplemented!()
         }
     }
     fn evaluate_expression(env: Rc<RefCell<Environment>>, car: &Datum,
@@ -133,8 +179,7 @@ impl Environment {
         match first {
             Datum::Procedure(p) => Self::run_procedure(env.clone(), &p,
                 &try!(Self::convert_list_to_vec(cdr))),
-            _ => runtime_error!("First element in an expression must be
-                a procedure: {:?}", first)
+            _ => runtime_error!("First element in an expression must be a procedure: {}", first)
         }
     }
     fn run_procedure(env: Rc<RefCell<Environment>>, p: &Procedure,
