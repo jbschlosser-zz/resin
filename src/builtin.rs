@@ -18,6 +18,8 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
             Rc::new(Box::new(native_cons))))),
         ("define", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_define))))),
+        ("lambda", Datum::Procedure(Procedure::Native(
+            Rc::new(Box::new(native_lambda))))),
         ("quote", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_quote)))))
     ]
@@ -77,6 +79,23 @@ fn native_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     let datum = try!(Environment::evaluate(env.clone(), &args[1]));
     env.borrow_mut().define(name, datum.clone());
     Ok(datum)
+}
+
+fn native_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Datum, RuntimeError>
+{
+    if args.len() < 2 { runtime_error!("Expected at least 2 args"); }
+    // TODO: Handle additional formal possibilities (e.g. ellipses).
+    let mut arg_names = Vec::new();
+    for formal in try!(Environment::convert_list_to_vec(&args[0])) {
+        match formal {
+            Datum::Symbol(s) => arg_names.push(s.clone()),
+            _ => runtime_error!("Expected symbol in lambda formals")
+        }
+    }
+    let body = Vec::from(&args[1..]);
+
+    Ok(Datum::Procedure(Procedure::Scheme(arg_names, body, env.clone())))
 }
 
 fn native_multiply(env: Rc<RefCell<Environment>>, args: &[Datum]) ->

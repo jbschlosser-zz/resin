@@ -172,6 +172,16 @@ impl Environment {
                 runtime_error!("Cannot evaluate empty list ()"),
         }
     }
+    pub fn evaluate_multiple(env: Rc<RefCell<Environment>>, data: &[Datum]) ->
+        Result<Datum, RuntimeError>
+    {
+        if data.len() == 0 { runtime_error!("Cannot evaluate nothing"); }
+        let mut res = try!(Self::evaluate(env.clone(), &data[0]));
+        for datum in &data[1..] {
+            res = try!(Self::evaluate(env.clone(), datum));
+        }
+        Ok(res)
+    }
     fn evaluate_expression(env: Rc<RefCell<Environment>>, car: &Datum,
         cdr: &Datum) -> Result<Datum, RuntimeError>
     {
@@ -187,10 +197,26 @@ impl Environment {
     {
         match p {
             &Procedure::Native(ref native) => native(env, args),
-            &Procedure::Scheme(..) => unimplemented!()
+            &Procedure::Scheme(ref arg_names, ref body_data, ref env) => {
+                if arg_names.len() != args.len() {
+                    runtime_error!("Expected {} argument(s) to function",
+                        arg_names.len());
+                }
+
+                // Set up the procedure's environment.
+                let proc_env = Rc::new(RefCell::new(
+                    Environment::new_with_parent(env.clone())));
+                for(name, arg) in arg_names.iter().zip(args.iter()) {
+                    let datum = try!(Environment::evaluate(env.clone(), arg));
+                    proc_env.borrow_mut().define(&name, datum);
+                }
+
+                // Evaluate the procedure body in the new environment.
+                Ok(try!(Self::evaluate_multiple(proc_env.clone(), body_data)))
+            }
         }
     }
-    fn convert_list_to_vec(list: &Datum) -> Result<Vec<Datum>, RuntimeError> {
+    pub fn convert_list_to_vec(list: &Datum) -> Result<Vec<Datum>, RuntimeError> {
         let mut vec: Vec<Datum> = Vec::new();
         let mut curr = list;
         loop {
