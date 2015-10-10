@@ -10,6 +10,8 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
             Rc::new(Box::new(native_add))))),
         ("*", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_multiply))))),
+        ("=", Datum::Procedure(Procedure::Native(
+            Rc::new(Box::new(native_equals))))),
         ("car", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_car))))),
         ("cdr", Datum::Procedure(Procedure::Native(
@@ -18,6 +20,8 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
             Rc::new(Box::new(native_cons))))),
         ("define", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_define))))),
+        ("if", Datum::Procedure(Procedure::Native(
+            Rc::new(Box::new(native_if))))),
         ("lambda", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_lambda))))),
         ("quote", Datum::Procedure(Procedure::Native(
@@ -79,6 +83,54 @@ fn native_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     let datum = try!(Environment::evaluate(env.clone(), &args[1]));
     env.borrow_mut().define(name, datum.clone());
     Ok(datum)
+}
+
+fn native_equals(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Datum, RuntimeError>
+{
+    if args.len() == 0 {
+        return Ok(Datum::Boolean(true));
+    }
+
+    let first = match try!(Environment::evaluate(env.clone(), &args[0])) {
+        Datum::Number(n) => n,
+        _ => runtime_error!("Expected number")
+    };
+
+    let mut res = true;
+    for a in &args[1..] {
+        res = res && match try!(Environment::evaluate(env.clone(), a)) {
+            Datum::Number(n) => n == first,
+            _ => runtime_error!("Expected number")
+        };
+    }
+
+    Ok(Datum::Boolean(res))
+}
+
+fn native_if(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Datum, RuntimeError>
+{
+    if args.len() != 2 && args.len() != 3 {
+        runtime_error!("Expected 2 or 3 args");
+    }
+
+    // Evaluate the test expression.
+    let test = try!(Environment::evaluate(env.clone(), &args[0]));
+    match test {
+        // Only #f counts as false.
+        Datum::Boolean(false) => {
+            if args.len() == 3 {
+                // Test is false - evaluate the alternate.
+                Ok(try!(Environment::evaluate(env.clone(), &args[2])))
+            } else {
+                // No alternate specified; return value is unspecified.
+                Ok(Datum::Boolean(false))
+            }
+        },
+        // Test is true - evaluate the consequent.
+        _ => Ok(try!(Environment::evaluate(env.clone(), &args[1])))
+    }
 }
 
 fn native_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->

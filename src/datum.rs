@@ -187,32 +187,35 @@ impl Environment {
     {
         let first = try!(Self::evaluate(env.clone(), car));
         match first {
-            Datum::Procedure(p) => Self::run_procedure(env.clone(), &p,
+            Datum::Procedure(p) => Self::call_procedure(env.clone(), &p,
                 &try!(Self::convert_list_to_vec(cdr))),
             _ => runtime_error!("First element in an expression must be a procedure: {}", first)
         }
     }
-    fn run_procedure(env: Rc<RefCell<Environment>>, p: &Procedure,
+    fn call_procedure(env: Rc<RefCell<Environment>>, p: &Procedure,
         args: &[Datum]) -> Result<Datum, RuntimeError>
     {
         match p {
             &Procedure::Native(ref native) => native(env, args),
-            &Procedure::Scheme(ref arg_names, ref body_data, ref env) => {
+            &Procedure::Scheme(ref arg_names, ref body_data, ref saved_env) => {
                 if arg_names.len() != args.len() {
                     runtime_error!("Expected {} argument(s) to function",
                         arg_names.len());
                 }
 
-                // Set up the procedure's environment.
+                // Set up the procedure's environment- start with the
+                // environment saved when the function was defined and add
+                // argument bindings. Arguments are evaluated within the
+                // context of the outer environment.
                 let proc_env = Rc::new(RefCell::new(
-                    Environment::new_with_parent(env.clone())));
+                    Environment::new_with_parent(saved_env.clone())));
                 for(name, arg) in arg_names.iter().zip(args.iter()) {
                     let datum = try!(Environment::evaluate(env.clone(), arg));
                     proc_env.borrow_mut().define(&name, datum);
                 }
 
                 // Evaluate the procedure body in the new environment.
-                Ok(try!(Self::evaluate_multiple(proc_env.clone(), body_data)))
+                Ok(try!(Self::evaluate_multiple(proc_env, body_data)))
             }
         }
     }
