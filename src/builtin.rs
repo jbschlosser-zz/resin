@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 pub fn get_builtins() -> Vec<(&'static str, Datum)>
 {
+    // TODO: Convert these to special forms.
     vec![
         ("+", Datum::Procedure(Procedure::Native(
             Rc::new(Box::new(native_add))))),
@@ -139,7 +140,7 @@ fn native_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     if args.len() < 2 { runtime_error!("Expected at least 2 args"); }
     // TODO: Handle additional formal possibilities (e.g. ellipses).
     let mut arg_names = Vec::new();
-    for formal in try!(Environment::convert_list_to_vec(&args[0])) {
+    for formal in try!(args[0].to_vec()) {
         match formal {
             Datum::Symbol(s) => arg_names.push(s.clone()),
             _ => runtime_error!("Expected symbol in lambda formals")

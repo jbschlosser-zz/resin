@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
+use vm::{Instruction, VirtualMachine};
 
 #[macro_export]
 macro_rules! list {
@@ -85,10 +86,28 @@ impl Datum {
     pub fn string(s: &str) -> Datum {
         Datum::String(s.to_string())
     }
+    pub fn to_vec(&self) ->
+        Result<Vec<Datum>, RuntimeError>
+    {
+        let mut vec: Vec<Datum> = Vec::new();
+        let mut curr = self;
+        loop {
+            match curr {
+                &Datum::Pair(ref car, ref cdr) => {
+                    vec.push(*car.clone());
+                    curr = cdr;
+                },
+                &Datum::EmptyList => return Ok(vec),
+                _ => runtime_error!("Cannot evaluate improper list")
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub enum Procedure {
+    SpecialForm(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+        Result<Vec<Instruction>, RuntimeError>>>),
     Native(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
         Result<Datum, RuntimeError>>>),
     Scheme(Vec<String>, Vec<Datum>, Rc<RefCell<Environment>>)
@@ -99,7 +118,8 @@ impl fmt::Debug for Procedure {
         match *self {
             // TODO: Implement this properly.
             Procedure::Native(..) => write!(f, "#<procedure-native>"),
-            Procedure::Scheme(..) => write!(f, "#<procedure-scheme>")
+            Procedure::Scheme(..) => write!(f, "#<procedure-scheme>"),
+            Procedure::SpecialForm(..) => write!(f, "#<special-form>")
         }
     }
 }
@@ -156,81 +176,7 @@ impl Environment {
     pub fn evaluate(env: Rc<RefCell<Environment>>, datum: &Datum) ->
         Result<Datum, RuntimeError>
     {
-        match datum {
-            &Datum::Symbol(ref s) => {
-                match env.borrow().get(s) {
-                    Some(d) => Ok(d),
-                    None => runtime_error!("Undefined identifier: {}", datum)
-                }
-            },
-            d @ &Datum::String(_) | d @ &Datum::Character(_) |
-            d @ &Datum::Number(_) | d @ &Datum::Boolean(_) |
-            d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) => Ok(d.clone()),
-            &Datum::Pair(ref car, ref cdr) =>
-                Self::evaluate_expression(env.clone(), car, cdr),
-            &Datum::EmptyList =>
-                runtime_error!("Cannot evaluate empty list ()"),
-        }
-    }
-    pub fn evaluate_multiple(env: Rc<RefCell<Environment>>, data: &[Datum]) ->
-        Result<Datum, RuntimeError>
-    {
-        if data.len() == 0 { runtime_error!("Cannot evaluate nothing"); }
-        let mut res = try!(Self::evaluate(env.clone(), &data[0]));
-        for datum in &data[1..] {
-            res = try!(Self::evaluate(env.clone(), datum));
-        }
-        Ok(res)
-    }
-    fn evaluate_expression(env: Rc<RefCell<Environment>>, car: &Datum,
-        cdr: &Datum) -> Result<Datum, RuntimeError>
-    {
-        let first = try!(Self::evaluate(env.clone(), car));
-        match first {
-            Datum::Procedure(p) => Self::call_procedure(env.clone(), &p,
-                &try!(Self::convert_list_to_vec(cdr))),
-            _ => runtime_error!("First element in an expression must be a procedure: {}", first)
-        }
-    }
-    fn call_procedure(env: Rc<RefCell<Environment>>, p: &Procedure,
-        args: &[Datum]) -> Result<Datum, RuntimeError>
-    {
-        match p {
-            &Procedure::Native(ref native) => native(env, args),
-            &Procedure::Scheme(ref arg_names, ref body_data, ref saved_env) => {
-                if arg_names.len() != args.len() {
-                    runtime_error!("Expected {} argument(s) to function",
-                        arg_names.len());
-                }
-
-                // Set up the procedure's environment- start with the
-                // environment saved when the function was defined and add
-                // argument bindings. Arguments are evaluated within the
-                // context of the outer environment.
-                let proc_env = Rc::new(RefCell::new(
-                    Environment::new_with_parent(saved_env.clone())));
-                for(name, arg) in arg_names.iter().zip(args.iter()) {
-                    let datum = try!(Environment::evaluate(env.clone(), arg));
-                    proc_env.borrow_mut().define(&name, datum);
-                }
-
-                // Evaluate the procedure body in the new environment.
-                Ok(try!(Self::evaluate_multiple(proc_env, body_data)))
-            }
-        }
-    }
-    pub fn convert_list_to_vec(list: &Datum) -> Result<Vec<Datum>, RuntimeError> {
-        let mut vec: Vec<Datum> = Vec::new();
-        let mut curr = list;
-        loop {
-            match curr {
-                &Datum::Pair(ref car, ref cdr) => {
-                    vec.push(*car.clone());
-                    curr = cdr;
-                },
-                &Datum::EmptyList => return Ok(vec),
-                _ => runtime_error!("Cannot evaluate improper list")
-            }
-        }
+        let mut vm = VirtualMachine::new();
+        vm.run(env, datum)
     }
 }
