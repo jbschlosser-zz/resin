@@ -6,6 +6,7 @@ use parser::Parser;
 use repl;
 use std::cell::RefCell;
 use std::rc::Rc;
+use vm::VirtualMachine;
 
 pub struct Interpreter {
     root: Rc<RefCell<Environment>>
@@ -57,7 +58,8 @@ impl Interpreter {
         });
     }
     pub fn evaluate(&self, datum: &Datum) -> Result<Datum, RuntimeError> {
-        Environment::evaluate(self.root.clone(), datum)
+        let mut vm = VirtualMachine::new();
+        vm.run(self.root.clone(), datum)
     }
 }
 

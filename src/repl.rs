@@ -36,7 +36,8 @@ pub fn run<F: Fn(String) -> Result<String, String>>(prompt: &str, func: F) {
             Some(input) => {
                 if input.len() > 0 {
                     let result = func(input);
-                    println!("{}", result.unwrap_or_else(|e| e));
+                    println!("{}", result.unwrap_or_else(|e|
+                        format!("ERROR: {}", e)));
                 }
             },
             None => return

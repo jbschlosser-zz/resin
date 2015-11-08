@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use vm::{Instruction, VirtualMachine};
+use vm::Instruction;
 
 #[macro_export]
 macro_rules! list {
@@ -86,6 +86,18 @@ impl Datum {
     pub fn string(s: &str) -> Datum {
         Datum::String(s.to_string())
     }
+    pub fn special<T: Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+        Result<Vec<Instruction>, RuntimeError> + 'static>(t: T) -> Datum
+    {
+        Datum::Procedure(Procedure::SpecialForm(SpecialForm(
+            Rc::new(Box::new(t)))))
+    }
+    pub fn native<T: Fn(&[Datum]) ->
+        Result<Datum, RuntimeError> + 'static>(t: T) -> Datum
+    {
+        Datum::Procedure(Procedure::Native(NativeProcedure(
+            Rc::new(Box::new(t)))))
+    }
     pub fn to_vec(&self) ->
         Result<Vec<Datum>, RuntimeError>
     {
@@ -106,20 +118,63 @@ impl Datum {
 
 #[derive(Clone)]
 pub enum Procedure {
-    SpecialForm(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
-        Result<Vec<Instruction>, RuntimeError>>>),
-    Native(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
-        Result<Datum, RuntimeError>>>),
+    SpecialForm(SpecialForm),
+    Native(NativeProcedure),
     Scheme(Vec<String>, Vec<Datum>, Rc<RefCell<Environment>>)
+}
+
+pub struct SpecialForm(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+    Result<Vec<Instruction>, RuntimeError>>>);
+pub struct NativeProcedure(Rc<Box<Fn(&[Datum]) ->
+    Result<Datum, RuntimeError>>>);
+
+impl fmt::Debug for SpecialForm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#<special-form>")
+    }
+}
+
+impl Clone for SpecialForm {
+    fn clone(&self) -> Self {
+        SpecialForm(self.0.clone())
+    }
+}
+
+impl SpecialForm {
+    pub fn call(&self, env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+        Result<Vec<Instruction>, RuntimeError>
+    {
+        self.0(env, args)
+    }
+}
+
+impl fmt::Debug for NativeProcedure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#<procedure-native>")
+    }
+}
+
+impl Clone for NativeProcedure {
+    fn clone(&self) -> Self {
+        NativeProcedure(self.0.clone())
+    }
+}
+
+impl NativeProcedure {
+    pub fn call(&self, args: &[Datum]) ->
+        Result<Datum, RuntimeError>
+    {
+        self.0(args)
+    }
 }
 
 impl fmt::Debug for Procedure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             // TODO: Implement this properly.
-            Procedure::Native(..) => write!(f, "#<procedure-native>"),
+            Procedure::Native(ref n) => n.fmt(f),
             Procedure::Scheme(..) => write!(f, "#<procedure-scheme>"),
-            Procedure::SpecialForm(..) => write!(f, "#<special-form>")
+            Procedure::SpecialForm(ref s) => s.fmt(f)
         }
     }
 }
@@ -130,6 +185,7 @@ impl PartialEq for Procedure {
         true
     }
 }
+
 impl Eq for Procedure {}
 
 #[derive(Debug)]
@@ -172,11 +228,5 @@ impl Environment {
                 }
             }
         }
-    }
-    pub fn evaluate(env: Rc<RefCell<Environment>>, datum: &Datum) ->
-        Result<Datum, RuntimeError>
-    {
-        let mut vm = VirtualMachine::new();
-        vm.run(env, datum)
     }
 }
