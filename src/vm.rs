@@ -8,7 +8,8 @@ pub enum Instruction {
     // Evaluates Datum in the Environment with optional tail-call optimization.
     Evaluate(Rc<RefCell<Environment>>, Datum, bool),
     // Calls procedure at the top of the val_stack with the specified number of
-    // args from the val_stack.
+    // args from the val_stack. Note that this replaces the current stack frame
+    // with the procedure instructions.
     CallProcedure(Rc<RefCell<Environment>>, usize),
     // Calls the native procedure with the specified number of args from the
     // val_stack.
@@ -75,7 +76,8 @@ impl VirtualMachine {
             Some(i) => i.clone(),
             None => return Ok(false)
         };
-        println!("=== Running instruction. Stack: {} ===", self.call_stack.len());
+        println!("=== Running instruction. Stack: {} PC: {} ===", self.call_stack.len(),
+            curr_pc);
         match inst {
             Instruction::Evaluate(ref env, ref datum, tco) => {
                 println!("evaluating {:?}", datum);
@@ -136,10 +138,9 @@ impl VirtualMachine {
                     },
                     _ => runtime_error!("First element in an expression must be a procedure or macro: {}", proc_datum)
                 };
-                match procedure {
+                let instructions = match procedure {
                     Procedure::SpecialForm(ref special) => {
-                        let instructions = try!(special.call(env, &args));
-                        self.call_stack.push(StackFrame::new(instructions));
+                        try!(special.call(env, &args))
                     },
                     Procedure::Native(ref native) => {
                         // TODO: Evaluate args beforehand.
@@ -149,7 +150,7 @@ impl VirtualMachine {
                             .collect();
                         instructions.push(Instruction::CallNative(
                             native.clone(), args.len()));
-                        self.call_stack.push(StackFrame::new(instructions));
+                        instructions
                     },
                     Procedure::Scheme(SchemeProcedure {
                         ref arg_names, ref body_data, ref saved_env }) =>
@@ -185,12 +186,15 @@ impl VirtualMachine {
                             }
                         }
 
-                        // Add the frame for the procedure to the call stack.
-                        self.call_stack.push(
-                            StackFrame::new(body_instructions));
+                        body_instructions
                     }
-                }
+                };
+
+                // Replace the current stack frame with the procedure call.
                 println!("Calling {:?} with {:?}", procedure, args);
+                self.call_stack[fp].instructions = instructions;
+                self.call_stack[fp].pc = 0;
+                return Ok(true);
             },
             Instruction::CallNative(native, n) => {
                 let top = self.val_stack.len();
@@ -216,6 +220,7 @@ impl VirtualMachine {
                 }
             },
             Instruction::JumpIfFalse(n) => {
+                println!("Jumping forward {} if datum is false", n);
                 let test = self.val_stack.pop().unwrap();
                 match test {
                     // Only #f counts as false.
