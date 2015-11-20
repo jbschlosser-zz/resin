@@ -1,4 +1,4 @@
-use datum::{Datum, Environment, NativeProcedure, Procedure};
+use datum::{Datum, Environment, NativeProcedure, Procedure, SchemeProcedure};
 use error::RuntimeError;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,8 +14,9 @@ pub enum Instruction {
     // val_stack.
     CallNative(NativeProcedure, usize),
     // Defines the symbol corresponding with the String to the Datum at the
-    // top of the val_stack.
-    Define(Rc<RefCell<Environment>>, String),
+    // top of the val_stack. The last flag indicates whether a syntax is
+    // being defined.
+    Define(Rc<RefCell<Environment>>, String, bool),
     // Pops the top value of val_stack and checks if it is #f - skips the
     // program counter forward the specified amount if it is
     JumpIfFalse(usize),
@@ -88,7 +89,8 @@ impl VirtualMachine {
                     },
                     d @ &Datum::String(_) | d @ &Datum::Character(_) |
                     d @ &Datum::Number(_) | d @ &Datum::Boolean(_) |
-                    d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) => {
+                    d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) |
+                    d @ &Datum::SyntaxRule(_) => {
                         self.val_stack.push(d.clone());
                     },
                     &Datum::Pair(ref car, ref cdr) => {
@@ -116,12 +118,23 @@ impl VirtualMachine {
                 }
             },
             Instruction::CallProcedure(env, n) => {
+                println!("calling procedure");
                 let proc_datum = self.val_stack.pop().unwrap();
                 let top = self.val_stack.len();
-                let args = self.val_stack.split_off(top - n);
+                let mut args = self.val_stack.split_off(top - n);
                 let procedure = match proc_datum {
                     Datum::Procedure(p) => p,
-                    _ => runtime_error!("First element in an expression must be a procedure: {}", proc_datum)
+                    Datum::SyntaxRule(p) => {
+                        // Pass the whole form as input to the syntax rule.
+                        let mut full_form = vec![Datum::symbol("_")];
+                        full_form.append(&mut args);
+                        let orig = vec![Datum::symbol("quote"),
+                            Datum::list(full_form)];
+                        args = vec![Datum::list(orig)];
+                        println!("macro args: {:?}", args);
+                        p
+                    },
+                    _ => runtime_error!("First element in an expression must be a procedure or macro: {}", proc_datum)
                 };
                 match procedure {
                     Procedure::SpecialForm(ref special) => {
@@ -134,12 +147,12 @@ impl VirtualMachine {
                             args.iter().map(|a| Instruction::Evaluate(
                                 env.clone(), a.clone(), false))
                             .collect();
-                        instructions.push(
-                            Instruction::CallNative(native.clone(), n));
+                        instructions.push(Instruction::CallNative(
+                            native.clone(), args.len()));
                         self.call_stack.push(StackFrame::new(instructions));
                     },
-                    Procedure::Scheme(ref arg_names, ref body_data,
-                        ref saved_env) =>
+                    Procedure::Scheme(SchemeProcedure {
+                        ref arg_names, ref body_data, ref saved_env }) =>
                     {
                         if arg_names.len() != args.len() {
                             runtime_error!("Expected {} argument(s) to function",
@@ -157,7 +170,7 @@ impl VirtualMachine {
                             body_instructions.push(Instruction::Evaluate(
                                 env.clone(), arg.clone(), false));
                             body_instructions.push(Instruction::Define(
-                                proc_env.clone(), name.clone()));
+                                proc_env.clone(), name.clone(), false));
                         }
 
                         // Evaluate the procedure body in the new environment.
@@ -181,13 +194,26 @@ impl VirtualMachine {
             },
             Instruction::CallNative(native, n) => {
                 let top = self.val_stack.len();
+                println!("Calling native with {} args. top: {}", n, top);
                 let args = self.val_stack.split_off(top - n);
                 let result = try!(native.call(&args));
                 self.val_stack.push(result);
             },
-            Instruction::Define(env, name) => {
+            Instruction::Define(env, name, is_syntax) => {
                 println!("Define value in environment");
-                env.borrow_mut().define(&name, self.val_stack.pop().unwrap());
+                if is_syntax {
+                    let datum = self.val_stack.pop().unwrap();
+                    match datum {
+                        Datum::Procedure(p) => {
+                            env.borrow_mut().define(&name,
+                                Datum::SyntaxRule(p));
+                        }
+                        _ => runtime_error!("Expected procedure for syntax")
+                    }
+                } else {
+                    env.borrow_mut().define(&name,
+                        self.val_stack.pop().unwrap());
+                }
             },
             Instruction::JumpIfFalse(n) => {
                 let test = self.val_stack.pop().unwrap();
@@ -202,7 +228,7 @@ impl VirtualMachine {
                 }
             },
             Instruction::PushValue(d) => {
-                println!("Pushing top value");
+                println!("Pushing top value: {:?}", d);
                 self.val_stack.push(d);
             },
             Instruction::PopValue => {

@@ -25,6 +25,7 @@ pub enum Datum {
     Boolean(bool),
     Vector(Rc<RefCell<Vec<Datum>>>),
     Procedure(Procedure),
+    SyntaxRule(Procedure),
     Pair(Box<Datum>, Box<Datum>),
     EmptyList
 }
@@ -51,6 +52,7 @@ impl fmt::Display for Datum {
                 write!(f, ")")
             },
             &Datum::Procedure(_) => write!(f, "#<procedure>"),
+            &Datum::SyntaxRule(_) => write!(f, "#<syntax-rule>"),
             &Datum::Pair(ref car, ref cdr) => {
                 let car_str = format!("{}", car);
                 let cdr_str = format!("{}", cdr);
@@ -98,6 +100,22 @@ impl Datum {
         Datum::Procedure(Procedure::Native(NativeProcedure(
             Rc::new(Box::new(t)))))
     }
+    pub fn scheme(arg_names: Vec<String>, body_data: Vec<Datum>,
+        saved_env: Rc<RefCell<Environment>>) -> Datum
+    {
+        Datum::Procedure(Procedure::Scheme(SchemeProcedure {
+            arg_names: arg_names,
+            body_data: body_data,
+            saved_env: saved_env
+        }))
+    }
+    pub fn list(elements: Vec<Datum>) -> Datum {
+        let mut list = Datum::EmptyList;
+        for element in elements.into_iter().rev() {
+            list = Datum::Pair(Box::new(element), Box::new(list));
+        }
+        list
+    }
     pub fn to_vec(&self) ->
         Result<Vec<Datum>, RuntimeError>
     {
@@ -110,7 +128,7 @@ impl Datum {
                     curr = cdr;
                 },
                 &Datum::EmptyList => return Ok(vec),
-                _ => runtime_error!("Cannot evaluate improper list")
+                _ => runtime_error!("Expected proper list")
             }
         }
     }
@@ -120,13 +138,18 @@ impl Datum {
 pub enum Procedure {
     SpecialForm(SpecialForm),
     Native(NativeProcedure),
-    Scheme(Vec<String>, Vec<Datum>, Rc<RefCell<Environment>>)
+    Scheme(SchemeProcedure)
 }
 
 pub struct SpecialForm(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>>>);
 pub struct NativeProcedure(Rc<Box<Fn(&[Datum]) ->
     Result<Datum, RuntimeError>>>);
+pub struct SchemeProcedure {
+    pub arg_names: Vec<String>,
+    pub body_data: Vec<Datum>,
+    pub saved_env: Rc<RefCell<Environment>>
+}
 
 impl fmt::Debug for SpecialForm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -165,6 +188,22 @@ impl NativeProcedure {
         Result<Datum, RuntimeError>
     {
         self.0(args)
+    }
+}
+
+impl fmt::Debug for SchemeProcedure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#<procedure-scheme>")
+    }
+}
+
+impl Clone for SchemeProcedure {
+    fn clone(&self) -> Self {
+        SchemeProcedure {
+            arg_names: self.arg_names.clone(),
+            body_data: self.body_data.clone(),
+            saved_env: self.saved_env.clone()
+        }
     }
 }
 
