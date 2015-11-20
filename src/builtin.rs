@@ -18,6 +18,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("syntax-rules", Datum::special(special_form_syntax_rules)),
 
         ("+", Datum::native(native_add)),
+        ("-", Datum::native(native_subtract)),
         ("*", Datum::native(native_multiply)),
         ("=", Datum::native(native_equals)),
         ("car", Datum::native(native_car)),
@@ -252,6 +253,28 @@ fn native_add(args: &[Datum]) -> Result<Datum, RuntimeError> {
     }
 
     Ok(Datum::Number(sum))
+}
+
+fn native_subtract(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() < 1 { runtime_error!("Expected 1 arg"); }
+
+    let mut difference = 0;
+    for (i, a) in args.iter().enumerate() {
+        match a {
+            &Datum::Number(n) => {
+                if i == 0 {
+                    difference = n;
+                } else {
+                    difference -= n;
+                }
+            },
+            _ => runtime_error!("Expected number")
+        };
+    }
+
+    // Handle unary case.
+    if args.len() == 1 { Ok(Datum::Number(-difference)) }
+    else { Ok(Datum::Number(difference)) }
 }
 
 fn native_car(args: &[Datum]) -> Result<Datum, RuntimeError> {
