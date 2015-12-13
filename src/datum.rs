@@ -116,9 +116,9 @@ impl Datum {
         }
         list
     }
-    pub fn to_vec(&self) ->
-        Result<Vec<Datum>, RuntimeError>
-    {
+    // Returns the vector and a flag indicating whether the datum
+    // was a proper list or not.
+    pub fn as_vec(&self) -> (Vec<Datum>, bool) {
         let mut vec: Vec<Datum> = Vec::new();
         let mut curr = self;
         loop {
@@ -127,10 +127,19 @@ impl Datum {
                     vec.push(*car.clone());
                     curr = cdr;
                 },
-                &Datum::EmptyList => return Ok(vec),
-                _ => runtime_error!("Expected proper list")
+                &Datum::EmptyList => return (vec, true),
+                d @ _ => {
+                    vec.push(d.clone());
+                    return (vec, false);
+                }
             }
         }
+    }
+    // Returns a vector only for the case of a proper list. Errors otherwise.
+    pub fn to_vec(&self) -> Result<Vec<Datum>, RuntimeError> {
+        let (vec_form, proper) = self.as_vec();
+        if !proper { runtime_error!("Expected proper list") }
+        Ok(vec_form)
     }
 }
 
@@ -268,4 +277,17 @@ impl Environment {
             }
         }
     }
+}
+
+#[test]
+fn is_proper_list_success() {
+    let list = list![Datum::Number(5), Datum::Number(6), Datum::Number(7)];
+    assert!(list.is_proper_list());
+}
+
+#[test]
+fn is_proper_list_failure() {
+    let list = Datum::pair(Datum::Number(5),
+        Datum::pair(Datum::Number(6), Datum::Number(7)));
+    assert!(!list.is_proper_list());
 }
