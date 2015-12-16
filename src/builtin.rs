@@ -179,6 +179,8 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
         // Verify the pattern.
         let variables = try!(verify_pattern(&pattern, &keywords));
         println!("variables: {:?}", variables);
+        let template_syms = try!(verify_template(&template, &keywords));
+        println!("template symbols: {:?}", template_syms);
 
         pattern_templates.push((pattern, template));
     }
@@ -204,10 +206,13 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
                 Some(m) => {
                     println!("mappings: {:?}, macro_name: {}", m, &macro_name);
 
-                    runtime_error!("Actually it worked");
+                    runtime_error!("early return");
 
                     // Apply the template.
-                    //return Ok(apply_template(&template, &m));
+                    match apply_template(&template, &vec![], &m) {
+                        Some(d) => return Ok(d),
+                        None => panic!("Bug in special form syntax-rules")
+                    };
                 },
                 None => ()
             }
@@ -216,12 +221,6 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     });
 
     Ok(vec![Instruction::PushValue(func)])
-}
-
-#[derive(Debug)]
-struct DatumMatching {
-    value: Datum,
-    index: Vec<usize>
 }
 
 // Returns the names of all pattern variables if successful.
@@ -271,8 +270,48 @@ fn verify_pattern_helper(pattern: &Datum, keywords: &[String],
     }
 }
 
+// Returns the non-keyword symbols in the template if succesful.
+fn verify_template(template: &Datum, keywords: &[String]) ->
+    Result<Vec<String>, RuntimeError>
+{
+    let mut symbols = Vec::new();
+    try!(verify_template_helper(template, keywords, true, &mut symbols));
+    Ok(symbols)
+}
+
+fn verify_template_helper(template: &Datum, keywords: &[String],
+    list_begin: bool, symbols: &mut Vec<String>) -> Result<(), RuntimeError>
+{
+    match template {
+        &Datum::Symbol(ref s) if !keywords.contains(s) && s != "..." => {
+            if !symbols.contains(s) {
+                symbols.push(s.clone());
+            }
+            Ok(())
+        },
+        &Datum::Pair(ref car, ref cdr) => {
+            // Check for ellipses- they should only be following a pattern.
+            match **car {
+                Datum::Symbol(ref s) if s == "..." => {
+                    let follows_pattern = !list_begin;
+                    if !follows_pattern {
+                        runtime_error!("Ellipses must follow a pattern");
+                    }
+                },
+                _ => ()
+            }
+
+            // Recursively verify the elements of the pair.
+            try!(verify_template_helper(car, keywords, true, symbols));
+            try!(verify_template_helper(cdr, keywords, false, symbols));
+            Ok(())
+        },
+        _ => Ok(())
+    }
+}
+
 fn match_pattern(pattern: &Datum, input: &Datum, keywords: &[String]) ->
-    Option<HashMap<String, Vec<DatumMatching>>>
+    Option<HashMap<String, HashMap<Vec<usize>, Datum>>>
 {
     let mut matchings = HashMap::new();
     if match_pattern_helper(pattern, input, keywords, &vec![], &mut matchings) {
@@ -284,7 +323,7 @@ fn match_pattern(pattern: &Datum, input: &Datum, keywords: &[String]) ->
 
 fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
     ellipsis_index: &Vec<usize>,
-    matchings: &mut HashMap<String, Vec<DatumMatching>>) -> bool
+    matchings: &mut HashMap<String, HashMap<Vec<usize>, Datum>>) -> bool
 {
     println!("matching {:?} to {:?}", pattern, input);
     match (pattern, input) {
@@ -301,13 +340,10 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
         // Pattern variable.
         (&Datum::Symbol(ref s), inp @ _) => {
             if !matchings.contains_key(s) {
-                matchings.insert(s.clone(), Vec::new());
+                matchings.insert(s.clone(), HashMap::new());
             }
-            matchings.get_mut(s).unwrap().push(
-                DatumMatching {
-                    value: inp.clone(),
-                    index: ellipsis_index.clone()
-                });
+            matchings.get_mut(s).unwrap().insert(
+                ellipsis_index.clone(), inp.clone());
             true
         },
         // TODO: Implement this.
@@ -373,19 +409,80 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
     }
 }
 
-fn apply_template(template: &Datum, mappings: &HashMap<String, Datum>) ->
-    Datum
+fn apply_template(template: &Datum, ellipsis_index: &Vec<usize>,
+    matchings: &HashMap<String, HashMap<Vec<usize>, Datum>>) -> Option<Datum>
 {
+    println!("template: {:?}, ellipsis_index: {:?}", template, ellipsis_index);
     match template {
-        &Datum::Symbol(ref s) if mappings.contains_key(s) => {
-            mappings[s].clone()
+        &Datum::Symbol(ref s) if matchings.contains_key(s) => {
+            match matchings[s].get(ellipsis_index) {
+                Some(d) => Some(d.clone()),
+                None => {println!("returning none from symbol"); None }
+            }
         },
         &Datum::Pair(ref car, ref cdr) => {
-            Datum::pair(
-                apply_template(&car, mappings),
-                apply_template(&cdr, mappings))
+            let (zero_or_more, after) = match **cdr {
+                Datum::Pair(ref next, ref after) => {
+                    match **next {
+                        Datum::Symbol(ref s) if s == "..." =>
+                            (true, Some(after)),
+                        _ => (false, None)
+                    }
+                },
+                _ => (false, None)
+            };
+            println!("template zero or more: {}", zero_or_more);
+            if zero_or_more {
+                // Build up the list of matchings (backwards).
+                let mut match_list = Datum::EmptyList; 
+                let mut eindex = 0;
+                loop {
+                    let mut new_ei = ellipsis_index.clone();
+                    new_ei.push(eindex);
+                    let test = apply_template(&car, &new_ei, matchings);
+                    println!("test: {:?}", test);
+                    match test {
+                        Some(Datum::EmptyList) => break,
+                        Some(d) => match_list = Datum::pair(d, match_list),
+                        None => break
+                    }
+                    eindex += 1;
+                }
+                println!("match_list: {:?}", match_list);
+                
+                // Reverse the list.
+                let mut reversed = match after {
+                    Some(a) => *a.clone(),
+                    None => Datum::EmptyList
+                };
+                println!("reversed at first: {:?}", reversed);
+                let mut current = match_list;
+                loop {
+                    match current {
+                        Datum::EmptyList => break,
+                        Datum::Pair(a, b) => {
+                            reversed = Datum::pair(*a, reversed);
+                            current = *b;
+                        },
+                        a @ _ => {
+                            reversed = Datum::pair(a.clone(), reversed);
+                            break;
+                        }
+                    }
+                }
+                println!("reversed at end: {:?}", reversed);
+                
+                Some(reversed)
+            } else {
+                match (apply_template(&car, ellipsis_index, matchings),
+                    apply_template(&cdr, ellipsis_index, matchings))
+                {
+                    (Some(a), Some(b)) => Some(Datum::pair(a, b)),
+                    _ => None
+                }
+            }
         },
-        t @ _ => t.clone()
+        t @ _ => Some(t.clone())
     }
 }
 
