@@ -25,7 +25,7 @@ pub enum Datum {
     Boolean(bool),
     Vector(Rc<RefCell<Vec<Datum>>>),
     Procedure(Procedure),
-    SyntaxRule(Procedure),
+    SyntaxRule(Procedure, String),
     Pair(Box<Datum>, Box<Datum>),
     EmptyList
 }
@@ -52,7 +52,8 @@ impl fmt::Display for Datum {
                 write!(f, ")")
             },
             &Datum::Procedure(_) => write!(f, "#<procedure>"),
-            &Datum::SyntaxRule(_) => write!(f, "#<syntax-rule>"),
+            &Datum::SyntaxRule(_, ref name) =>
+                write!(f, "#<syntax-rule:{}>", name),
             &Datum::Pair(ref car, ref cdr) => {
                 let car_str = format!("{}", car);
                 let cdr_str = format!("{}", cdr);
@@ -115,6 +116,29 @@ impl Datum {
             list = Datum::Pair(Box::new(element), Box::new(list));
         }
         list
+    }
+    pub fn reverse(&self) -> Datum {
+        // Reverse the list.
+        let mut reversed = match self {
+            &Datum::EmptyList | &Datum::Pair(..) => Datum::EmptyList,
+            _ => return self.clone()
+        };
+        let mut current = self;
+        loop {
+            match current {
+                &Datum::EmptyList => break,
+                &Datum::Pair(ref a, ref b) => {
+                    reversed = Datum::pair(*a.clone(), reversed);
+                    current = &*b;
+                },
+                a @ _ => {
+                    reversed = Datum::pair(a.clone(), reversed);
+                    break;
+                }
+            }
+        }
+
+        reversed
     }
     // Returns the vector and a flag indicating whether the datum
     // was a proper list or not.
@@ -246,7 +270,7 @@ impl Environment {
     pub fn new() -> Self {
         Environment {parent: None, bindings: HashMap::new()}
     }
-    pub fn new_with_parent(parent: Rc<RefCell<Environment>>) -> Self {
+    pub fn with_parent(parent: Rc<RefCell<Environment>>) -> Self {
         Environment {parent: Some(parent), bindings: HashMap::new()}
     }
     pub fn define(&mut self, name: &str, datum: Datum) {
@@ -277,9 +301,25 @@ impl Environment {
             }
         }
     }
+    pub fn contains(&self, name: &str) -> bool {
+        self.bindings.contains_key(name)
+    }
+    pub fn iter(&self) -> ::std::collections::hash_map::Iter<String, Datum> {
+        self.bindings.iter()
+    }
 }
 
 #[test]
+fn test_reverse() {
+    assert_eq!(list!(Datum::Number(1), Datum::Number(2), Datum::Number(3))
+        .reverse(),
+        list!(Datum::Number(3), Datum::Number(2), Datum::Number(1)));
+    assert_eq!(Datum::EmptyList.reverse(), Datum::EmptyList);
+    assert_eq!(Datum::Number(1).reverse(), Datum::Number(1));
+    assert_eq!(list!(Datum::Number(1)).reverse(), list!(Datum::Number(1)));
+}
+
+/*#[test]
 fn is_proper_list_success() {
     let list = list![Datum::Number(5), Datum::Number(6), Datum::Number(7)];
     assert!(list.is_proper_list());
@@ -290,4 +330,4 @@ fn is_proper_list_failure() {
     let list = Datum::pair(Datum::Number(5),
         Datum::pair(Datum::Number(6), Datum::Number(7)));
     assert!(!list.is_proper_list());
-}
+}*/

@@ -80,7 +80,7 @@ impl VirtualMachine {
             curr_pc);
         match inst {
             Instruction::Evaluate(ref env, ref datum, tco) => {
-                println!("evaluating {:?}", datum);
+                println!("evaluating {}", datum);
                 match datum {
                     &Datum::Symbol(ref s) => {
                         match env.borrow().get(s) {
@@ -92,7 +92,7 @@ impl VirtualMachine {
                     d @ &Datum::String(_) | d @ &Datum::Character(_) |
                     d @ &Datum::Number(_) | d @ &Datum::Boolean(_) |
                     d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) |
-                    d @ &Datum::SyntaxRule(_) => {
+                    d @ &Datum::SyntaxRule(..) => {
                         self.val_stack.push(d.clone());
                     },
                     &Datum::Pair(ref car, ref cdr) => {
@@ -126,13 +126,14 @@ impl VirtualMachine {
                 let mut args = self.val_stack.split_off(top - n);
                 let procedure = match proc_datum {
                     Datum::Procedure(p) => p,
-                    Datum::SyntaxRule(p) => {
+                    Datum::SyntaxRule(p, name) => {
                         // Pass the whole form as input to the syntax rule.
-                        let mut full_form = vec![Datum::symbol("_")];
+                        let mut full_form = vec![Datum::Symbol(name)];
                         full_form.append(&mut args);
-                        let orig = vec![Datum::symbol("quote"),
-                            Datum::list(full_form)];
-                        args = vec![Datum::list(orig)];
+                        //let orig = vec![Datum::symbol("quote"),
+                        //    Datum::list(full_form)];
+                        //args = vec![Datum::list(orig)];
+                        args = vec![Datum::list(full_form)];
                         println!("macro args: {:?}", args);
                         p
                     },
@@ -165,7 +166,7 @@ impl VirtualMachine {
                         // add argument bindings. Arguments are evaluated within
                         // the context of the outer environment.
                         let proc_env = Rc::new(RefCell::new(
-                            Environment::new_with_parent(saved_env.clone())));
+                            Environment::with_parent(saved_env.clone())));
                         let mut body_instructions = Vec::new();
                         for(name, arg) in arg_names.iter().zip(args.iter()) {
                             body_instructions.push(Instruction::Evaluate(
@@ -210,7 +211,7 @@ impl VirtualMachine {
                     match datum {
                         Datum::Procedure(p) => {
                             env.borrow_mut().define(&name,
-                                Datum::SyntaxRule(p));
+                                Datum::SyntaxRule(p, name.clone()));
                         }
                         _ => runtime_error!("Expected procedure for syntax")
                     }
@@ -233,7 +234,7 @@ impl VirtualMachine {
                 }
             },
             Instruction::PushValue(d) => {
-                println!("Pushing top value: {:?}", d);
+                println!("Pushing top value: {}", d);
                 self.val_stack.push(d);
             },
             Instruction::PopValue => {

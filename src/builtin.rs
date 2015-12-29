@@ -1,7 +1,7 @@
 use datum::{Datum, Environment};
 use error::RuntimeError;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use vm::Instruction;
 
@@ -134,7 +134,7 @@ fn special_form_quote(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
 
     Ok(vec![Instruction::PushValue(args[0].clone())])
 }
-fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
+fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     let usage_str =
@@ -152,7 +152,6 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     if keywords.contains(&String::from("...")) {
         runtime_error!("Ellipses (...) cannot be in the keywords list");
     }
-    println!("keywords: {:?}", keywords);
 
     // Parse the pattern/template entries.
     let mut pattern_templates = Vec::new();
@@ -161,35 +160,40 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
         if parts.len() != 2 { runtime_error!("{}", &usage_str); }
         let template = parts.remove(1);
         let pattern_datum = parts.remove(0);
-
-        let (macro_name, pattern) = match pattern_datum {
+        let pattern = match pattern_datum {
             Datum::Pair(ref car, ref cdr) => {
                 match **car {
-                    Datum::Symbol(ref s) => (s.clone(), *cdr.clone()),
+                    Datum::Symbol(_) => *cdr.clone(),
                     _ => runtime_error!("First element in a pattern must be the macro identifier")
                 }
             }
             _ => runtime_error!("{}", &usage_str)
         };
 
-        // Parse out the pattern.
-        //let pattern = try!(Pattern::parse(&pattern_datum, &keywords));
-        println!("pattern: {:?}", pattern);
-
-        // Verify the pattern.
+        // Verify the pattern and template.
         let variables = try!(verify_pattern(&pattern, &keywords));
-        println!("variables: {:?}", variables);
-        let template_syms = try!(verify_template(&template, &keywords));
-        println!("template symbols: {:?}", template_syms);
+        let template_symbols = try!(verify_template(&template));
 
-        pattern_templates.push((pattern, template));
+        // Environment to hold any free variables in the template.
+        let mut free_env = Environment::new();
+        for sym in template_symbols.iter() {
+            if !variables.contains(sym) {
+                if let Some(val) = env.borrow().get(sym) {
+                    free_env.define(sym, val.clone());
+                }
+            }
+        }
+
+        pattern_templates.push((pattern, template, template_symbols, free_env));
     }
-    println!("pattern/templates: {:?}", pattern_templates);
 
     // Create a function that takes in a raw form and attempts to match
     // it against the patterns. If one matches, it applies the associated
-    // template.
-    let func = Datum::native(move |args: &[Datum]| {
+    // template and evaluates the result.
+    let func = Datum::special(move |env: Rc<RefCell<Environment>>,
+        args: &[Datum]|
+    {
+        // Verify that a raw un-expanded macro call has been passed.
         if args.len() != 1 { runtime_error!("Expected 1 arg"); }
         let (macro_name, input) = match args[0] {
             Datum::Pair(ref car, ref cdr) => {
@@ -200,19 +204,56 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
             },
             _ => runtime_error!("Cannot apply syntax-rules to non-list")
         };
-        for &(ref pattern, ref template) in pattern_templates.iter() {
-            //match pattern.match_with(&args[0], &macro_name) {
-            match match_pattern(pattern, &input, &keywords) {
-                Some(m) => {
-                    println!("mappings: {:?}, macro_name: {}", m, &macro_name);
+        println!("macro name: {}", macro_name);
 
-                    runtime_error!("early return");
+        // Try to match against each pattern in order.
+        for &(ref pattern, ref template, ref template_syms, ref free_env) in
+            pattern_templates.iter()
+        {
+            // Try to match against this pattern.
+            match match_pattern(pattern, &input, &keywords) {
+                Some(var_env) => {
+                    // === MACRO HYGIENE ===
+                    // Rename symbols in the template for hygiene.
+                    let mut name_mappings = HashMap::new();
+                    for template_sym in template_syms.iter() {
+                        // Rename the symbol if it exists in the current
+                        // environment so as not to conflict.
+                        let mut new_name = template_sym.clone();
+                        let mut temp_index = 1;
+                        while let Some(_) = env.borrow().get(&new_name) {
+                            new_name = format!("{}_hygienic_{}",
+                                template_sym, temp_index);
+                            temp_index += 1;
+                        }
+                        name_mappings.insert(template_sym.clone(), new_name);
+                    }
+                    name_mappings.insert(macro_name.clone(),macro_name.clone());
+                    let renamed_template = rename_template(&template,
+                        &name_mappings);
+                    println!("name mappings: {:?}", name_mappings);
+                    
+                    // The evaluation environment for the template
+                    // is the current environment plus the values of
+                    // free variables stored when the macro was defined.
+                    let eval_env = Rc::new(RefCell::new(
+                        Environment::with_parent(env.clone())));
+                    for (old_name, new_name) in name_mappings {
+                        match free_env.get(&old_name) {
+                            Some(d) => eval_env.borrow_mut().
+                                define(&new_name, d),
+                            None => (),
+                        }
+                    }
 
                     // Apply the template.
-                    match apply_template(&template, &vec![], &m) {
-                        Some(d) => return Ok(d),
-                        None => panic!("Bug in special form syntax-rules")
-                    };
+                    println!(">>> matched pattern: {}", pattern);
+                    println!(">>> applying template: {}", renamed_template);
+                    let result = try!(apply_template(&renamed_template,
+                        &var_env));
+                    println!(">>> result: {}", result);
+                    return Ok(vec![Instruction::Evaluate(eval_env.clone(),
+                        result, false)]);
                 },
                 None => ()
             }
@@ -223,25 +264,43 @@ fn special_form_syntax_rules(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Ok(vec![Instruction::PushValue(func)])
 }
 
+// Renames symbols in the template according to the given mappings.
+fn rename_template(template: &Datum, mappings: &HashMap<String, String>) ->
+    Datum
+{
+    match template {
+        &Datum::Symbol(ref s) => {
+            match mappings.get(s) {
+                Some(m) => Datum::Symbol(m.clone()),
+                None => template.clone()
+            }
+        },
+        &Datum::Pair(ref car, ref cdr) =>
+            Datum::pair(rename_template(&car, mappings),
+                rename_template(&cdr, mappings)),
+        _ => template.clone()
+    }
+}
+
 // Returns the names of all pattern variables if successful.
 // Duplicates are not allowed.
 fn verify_pattern(pattern: &Datum, keywords: &[String]) ->
-    Result<Vec<String>, RuntimeError>
+    Result<HashSet<String>, RuntimeError>
 {
-    let mut variables = Vec::new();
+    let mut variables = HashSet::new();
     try!(verify_pattern_helper(pattern, keywords, true, &mut variables));
     Ok(variables)
 }
 
-fn verify_pattern_helper(pattern: &Datum, keywords: &[String],
-    list_begin: bool, variables: &mut Vec<String>) -> Result<(), RuntimeError>
+fn verify_pattern_helper(pattern: &Datum, keywords: &[String], list_begin: bool,
+    variables: &mut HashSet<String>) -> Result<(), RuntimeError>
 {
     match pattern {
         &Datum::Symbol(ref s) if !keywords.contains(s) && s != "..." => {
             if variables.contains(s) {
                 runtime_error!("Duplicate pattern variables are not allowed");
             }
-            variables.push(s.clone());
+            variables.insert(s.clone());
             Ok(())
         },
         &Datum::Pair(ref car, ref cdr) => {
@@ -270,22 +329,20 @@ fn verify_pattern_helper(pattern: &Datum, keywords: &[String],
     }
 }
 
-// Returns the non-keyword symbols in the template if succesful.
-fn verify_template(template: &Datum, keywords: &[String]) ->
-    Result<Vec<String>, RuntimeError>
-{
-    let mut symbols = Vec::new();
-    try!(verify_template_helper(template, keywords, true, &mut symbols));
+// Returns the symbols in the template if successful.
+fn verify_template(template: &Datum) -> Result<HashSet<String>, RuntimeError> {
+    let mut symbols = HashSet::new();
+    try!(verify_template_helper(template, true, &mut symbols));
     Ok(symbols)
 }
 
-fn verify_template_helper(template: &Datum, keywords: &[String],
-    list_begin: bool, symbols: &mut Vec<String>) -> Result<(), RuntimeError>
+fn verify_template_helper(template: &Datum, list_begin: bool,
+    symbols: &mut HashSet<String>) -> Result<(), RuntimeError>
 {
     match template {
-        &Datum::Symbol(ref s) if !keywords.contains(s) && s != "..." => {
+        &Datum::Symbol(ref s) if s != "..." => {
             if !symbols.contains(s) {
-                symbols.push(s.clone());
+                symbols.insert(s.clone());
             }
             Ok(())
         },
@@ -302,48 +359,41 @@ fn verify_template_helper(template: &Datum, keywords: &[String],
             }
 
             // Recursively verify the elements of the pair.
-            try!(verify_template_helper(car, keywords, true, symbols));
-            try!(verify_template_helper(cdr, keywords, false, symbols));
+            try!(verify_template_helper(car, true, symbols));
+            try!(verify_template_helper(cdr, false, symbols));
             Ok(())
         },
         _ => Ok(())
     }
 }
 
+// Attempts to match the input to the given pattern. If successful,
+// an environment of the pattern variables is returned.
 fn match_pattern(pattern: &Datum, input: &Datum, keywords: &[String]) ->
-    Option<HashMap<String, HashMap<Vec<usize>, Datum>>>
+    Option<Environment>
 {
-    let mut matchings = HashMap::new();
-    if match_pattern_helper(pattern, input, keywords, &vec![], &mut matchings) {
-        Some(matchings)
+    let mut env = Environment::new();
+    if match_pattern_helper(pattern, input, keywords, &mut env) {
+        Some(env)
     } else {
         None
     }
 }
 
 fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
-    ellipsis_index: &Vec<usize>,
-    matchings: &mut HashMap<String, HashMap<Vec<usize>, Datum>>) -> bool
+    env: &mut Environment) -> bool
 {
-    println!("matching {:?} to {:?}", pattern, input);
     match (pattern, input) {
         // Keyword literal.
         (&Datum::Symbol(ref s), inp @ _) if keywords.contains(s) => {
             match inp {
-                &Datum::Symbol(ref t) => {
-                    if s == t { return true; }
-                    false
-                },
+                &Datum::Symbol(ref t) => s == t,
                 _ => false
             }
         },
         // Pattern variable.
         (&Datum::Symbol(ref s), inp @ _) => {
-            if !matchings.contains_key(s) {
-                matchings.insert(s.clone(), HashMap::new());
-            }
-            matchings.get_mut(s).unwrap().insert(
-                ellipsis_index.clone(), inp.clone());
+            env.define(s, inp.clone());
             true
         },
         // TODO: Implement this.
@@ -360,16 +410,12 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
                 },
                 _ => false
             };
-            println!("zero or more: {:?}", zero_or_more);
             if zero_or_more {
                 // Match as long as possible.
                 let mut current = inp;
-                let mut eindex = 0;
+                let mut at_least_one_found = false;
+                let mut to_reverse = HashSet::new();
                 loop {
-                    // Set up ellipsis index.
-                    let mut new_ei = ellipsis_index.clone();
-                    new_ei.push(eindex);
-
                     // Make sure the current is part of a list.
                     let (element, next) = match current {
                         &Datum::Pair(ref ccar, ref ccdr) => (ccar, ccdr),
@@ -379,47 +425,100 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
                     };
 
                     // Check if the list element matches the pattern.
+                    let mut sub_env = Environment::new();
                     if !match_pattern_helper(pcar, &element, keywords,
-                        &new_ei, matchings)
+                        &mut sub_env)
                     {
                         return false;
                     }
 
+                    // Merge in the sub environment.
+                    for (var, value) in sub_env.iter() {
+                        let mut curr = if let Some(d) = env.get(var) {
+                            d
+                        } else {
+                            Datum::EmptyList
+                        };
+                        curr = Datum::pair(value.clone(), curr);
+                        env.define(var, curr);
+                        to_reverse.insert(var.clone());
+                    }
+
                     // Move to the next element.
                     current = &**next;
-                    eindex += 1;
+                    at_least_one_found = true;
+                }
+
+                // If no matches were found, add an empty list for each
+                // variable in the pattern.
+                if !at_least_one_found {
+                    add_empty_matching(pcar, keywords, env);
+                }
+
+                // Reverse any lists that were built up.
+                for var in to_reverse {
+                    let value = env.get(&var).unwrap();
+                    env.define(&var, value.reverse());
                 }
                 true
             } else {
                 // Continue matching one at a time.
-                println!("one at a time...");
                 match inp {
                     &Datum::Pair(ref icar, ref icdr) => {
-                        match_pattern_helper(pcar, icar, keywords,
-                            ellipsis_index, matchings) &&
-                            match_pattern_helper(pcdr, icdr, keywords,
-                                ellipsis_index, matchings)
+                        match_pattern_helper(pcar, icar, keywords, env) &&
+                            match_pattern_helper(pcdr, icdr, keywords, env)
                     },
                     _ => false
                 }
             }
         },
-        (p @ _, inp @ _) if p == inp => true,
-        (_, _) => false
+        (p @ _, inp @ _) => p == inp
     }
 }
 
-fn apply_template(template: &Datum, ellipsis_index: &Vec<usize>,
-    matchings: &HashMap<String, HashMap<Vec<usize>, Datum>>) -> Option<Datum>
+fn add_empty_matching(pattern: &Datum, keywords: &[String],
+    env: &mut Environment)
 {
-    println!("template: {:?}, ellipsis_index: {:?}", template, ellipsis_index);
-    match template {
-        &Datum::Symbol(ref s) if matchings.contains_key(s) => {
-            match matchings[s].get(ellipsis_index) {
-                Some(d) => Some(d.clone()),
-                None => {println!("returning none from symbol"); None }
-            }
+    match pattern {
+        &Datum::Symbol(ref s) if !keywords.contains(s) => {
+            env.define(s, Datum::EmptyList);
         },
+        &Datum::Pair(ref car, ref cdr) => {
+            add_empty_matching(car, keywords, env);
+            add_empty_matching(cdr, keywords, env);
+        },
+        _ => ()
+    }
+}
+
+fn get_variables(template: &Datum, var_env: &Environment) -> HashSet<String> {
+    let mut variables = HashSet::new();
+    get_variables_helper(template, var_env, &mut variables);
+    variables
+}
+
+fn get_variables_helper(template: &Datum, var_env: &Environment,
+    variables: &mut HashSet<String>)
+{
+    match template {
+        &Datum::Symbol(ref s) if var_env.contains(s) && s != "..." => {
+            variables.insert(s.clone());
+        },
+        &Datum::Pair(ref car, ref cdr) => {
+            get_variables_helper(car, var_env, variables);
+            get_variables_helper(cdr, var_env, variables);
+        },
+        _ => ()
+    }
+}
+
+fn apply_template(template: &Datum, var_env: &Environment) ->
+    Result<Datum, RuntimeError>
+{
+    match template {
+        // Handle variable substitution.
+        &Datum::Symbol(ref s) if var_env.contains(s) =>
+            Ok(var_env.get(s).unwrap()),
         &Datum::Pair(ref car, ref cdr) => {
             let (zero_or_more, after) = match **cdr {
                 Datum::Pair(ref next, ref after) => {
@@ -431,58 +530,53 @@ fn apply_template(template: &Datum, ellipsis_index: &Vec<usize>,
                 },
                 _ => (false, None)
             };
-            println!("template zero or more: {}", zero_or_more);
             if zero_or_more {
-                // Build up the list of matchings (backwards).
-                let mut match_list = Datum::EmptyList; 
-                let mut eindex = 0;
-                loop {
-                    let mut new_ei = ellipsis_index.clone();
-                    new_ei.push(eindex);
-                    let test = apply_template(&car, &new_ei, matchings);
-                    println!("test: {:?}", test);
-                    match test {
-                        Some(Datum::EmptyList) => break,
-                        Some(d) => match_list = Datum::pair(d, match_list),
-                        None => break
-                    }
-                    eindex += 1;
+                // Determine which variables need to be iterated over for
+                // the ellipses.
+                let variables = get_variables(car, var_env);
+                if variables.len() == 0 {
+                    runtime_error!("Expected variables before ellipses");
                 }
-                println!("match_list: {:?}", match_list);
-                
-                // Reverse the list.
-                let mut reversed = match after {
-                    Some(a) => *a.clone(),
-                    None => Datum::EmptyList
-                };
-                println!("reversed at first: {:?}", reversed);
-                let mut current = match_list;
+                let vectors: Vec<(String, Vec<Datum>)> = variables.iter()
+                    .map(|v| (v.clone(), var_env.get(v).unwrap().as_vec().0))
+                    .collect();
+                let iterations = vectors.iter()
+                    .map(|v| v.1.len()).min().unwrap();
+
+                // Iterate over variables and build up a list (backwards).
+                let mut reversed = Datum::EmptyList;
+                for i in 0..iterations {
+                    let mut sub_env = Environment::new();
+                    for &(ref var, ref values) in vectors.iter() {
+                        sub_env.define(&var, values[i].clone());
+                    }
+                    let result = try!(apply_template(car, &sub_env));
+                    reversed = Datum::pair(result, reversed);
+                }
+
+                // Recursively apply the template to the rest.
+                let mut result = try!(apply_template(after.unwrap(), var_env));
+
+                // Unreverse the list as it is attached to the rest.
+                let mut current = &reversed;
                 loop {
-                    match current {
-                        Datum::EmptyList => break,
-                        Datum::Pair(a, b) => {
-                            reversed = Datum::pair(*a, reversed);
-                            current = *b;
+                    current = match current {
+                        &Datum::EmptyList => break,
+                        &Datum::Pair(ref a, ref b) => {
+                            result = Datum::pair(*a.clone(), result);
+                            &*b
                         },
-                        a @ _ => {
-                            reversed = Datum::pair(a.clone(), reversed);
-                            break;
-                        }
-                    }
+                        _ => panic!("bug in apply_template")
+                    };
                 }
-                println!("reversed at end: {:?}", reversed);
-                
-                Some(reversed)
+
+                Ok(result)
             } else {
-                match (apply_template(&car, ellipsis_index, matchings),
-                    apply_template(&cdr, ellipsis_index, matchings))
-                {
-                    (Some(a), Some(b)) => Some(Datum::pair(a, b)),
-                    _ => None
-                }
+                Ok(Datum::pair(try!(apply_template(car, var_env)),
+                    try!(apply_template(cdr, var_env))))
             }
         },
-        t @ _ => Some(t.clone())
+        t @ _ => Ok(t.clone())
     }
 }
 
