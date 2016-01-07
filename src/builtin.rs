@@ -13,6 +13,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("define-syntax", Datum::special(special_form_define_syntax)),
         ("if", Datum::special(special_form_if)),
         ("lambda", Datum::special(special_form_lambda)),
+        ("let", Datum::special(special_form_let)),
         ("quote", Datum::special(special_form_quote)),
         ("set!", Datum::special(special_form_define)),
         ("syntax-rules", Datum::special(special_form_syntax_rules)),
@@ -125,6 +126,39 @@ fn special_form_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     let body = Vec::from(&args[1..]);
     let lambda = Datum::scheme(arg_names, body, env.clone());
     Ok(vec![Instruction::PushValue(lambda)])
+}
+
+fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Vec<Instruction>, RuntimeError>
+{
+    let usage_str =
+        format!("Usage: (let (bindings) (body)) with bindings having the form ((variable init) ...)");
+    if args.len() != 2 { runtime_error!("{}", &usage_str); }
+
+    // Parse the bindings and add instructions for evaluating the initial
+    // values to define within a sub-environment.
+    let mut instructions = Vec::new();
+    let let_env = Rc::new(RefCell::new(Environment::with_parent(env.clone())));
+    let bindings = try_or_runtime_error!(args[0].to_vec(), "{}", &usage_str);
+    for binding in bindings {
+        let mut parts =
+            try_or_runtime_error!(binding.to_vec(), "{}", &usage_str);
+        if parts.len() != 2 { runtime_error!("{}", &usage_str); }
+        let init = parts.remove(1);
+        let variable = parts.remove(0);
+        let var_name = match variable {
+            Datum::Symbol(ref s) => s.to_string(),
+            _ => runtime_error!("{}", &usage_str)
+        };
+        instructions.push(Instruction::Evaluate(env.clone(), init, false));
+        instructions.push(
+            Instruction::Define(let_env.clone(), var_name, false));
+    }
+
+    // Add the instruction for evaluating the body within the sub-environment.
+    let body = args[1].clone();
+    instructions.push(Instruction::Evaluate(let_env.clone(), body, true));
+    Ok(instructions)
 }
 
 fn special_form_quote(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
