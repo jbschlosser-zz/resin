@@ -132,8 +132,8 @@ fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     let usage_str =
-        format!("Usage: (let (bindings) (body)) with bindings having the form ((variable init) ...)");
-    if args.len() != 2 { runtime_error!("{}", &usage_str); }
+        format!("Usage: (let ((variable init) ...) body ...)");
+    if args.len() < 2 { runtime_error!("{}", &usage_str); }
 
     // Parse the bindings and add instructions for evaluating the initial
     // values to define within a sub-environment.
@@ -155,9 +155,14 @@ fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             Instruction::Define(let_env.clone(), var_name, false));
     }
 
-    // Add the instruction for evaluating the body within the sub-environment.
-    let body = args[1].clone();
-    instructions.push(Instruction::Evaluate(let_env.clone(), body, true));
+    // Add the instructions for evaluating the body within the sub-environment.
+    for (i, arg) in args.iter().skip(1).enumerate() {
+        let last = i == args.len() - 2;
+        instructions.push(Instruction::Evaluate(let_env.clone(),arg.clone(),last));
+        if !last {
+            instructions.push(Instruction::PopValue);
+        }
+    }
     Ok(instructions)
 }
 
