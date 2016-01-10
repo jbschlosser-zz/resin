@@ -1,4 +1,5 @@
-use datum::{Datum, Environment};
+use datum::Datum;
+use environment::Environment;
 use error::RuntimeError;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

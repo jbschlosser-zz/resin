@@ -1,4 +1,5 @@
-use datum::{Datum, Environment, NativeProcedure, Procedure, SchemeProcedure};
+use datum::{Datum, NativeProcedure, Procedure, SchemeProcedure};
+use environment::Environment;
 use error::RuntimeError;
 use std::cell::RefCell;
 use std::rc::Rc;
