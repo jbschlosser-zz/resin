@@ -244,7 +244,7 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             },
             _ => runtime_error!("Cannot apply syntax-rules to non-list")
         };
-        println!("macro name: {}", macro_name);
+        //println!("macro name: {}", macro_name);
 
         // Try to match against each pattern in order.
         for &(ref pattern, ref template, ref template_syms, ref free_env) in
@@ -271,7 +271,7 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     name_mappings.insert(macro_name.clone(),macro_name.clone());
                     let renamed_template = rename_template(&template,
                         &name_mappings);
-                    println!("name mappings: {:?}", name_mappings);
+                    //println!("name mappings: {:?}", name_mappings);
                     
                     // The evaluation environment for the template
                     // is the current environment plus the values of
@@ -287,11 +287,11 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     }
 
                     // Apply the template.
-                    println!(">>> matched pattern: {}", pattern);
-                    println!(">>> applying template: {}", renamed_template);
+                    //println!(">>> matched pattern: {}", pattern);
+                    //println!(">>> applying template: {}", renamed_template);
                     let result = try!(apply_template(&renamed_template,
                         &var_env));
-                    println!(">>> result: {}", result);
+                    //println!(">>> result: {}", result);
                     return Ok(vec![Instruction::Evaluate(eval_env.clone(),
                         result, false)]);
                 },

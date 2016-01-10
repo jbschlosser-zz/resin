@@ -49,7 +49,7 @@ pub struct VirtualMachine {
 
 impl VirtualMachine {
     pub fn new() -> Self {
-        println!("creating new VM");
+        //println!("creating new VM");
         VirtualMachine {call_stack: Vec::new(), val_stack: Vec::new()}
     }
     pub fn run(&mut self, env: Rc<RefCell<Environment>>, datum: &Datum) ->
@@ -77,11 +77,11 @@ impl VirtualMachine {
             Some(i) => i.clone(),
             None => return Ok(false)
         };
-        println!("=== Running instruction. Stack: {} PC: {} ===", self.call_stack.len(),
-            curr_pc);
+        //println!("=== Running instruction. Stack: {} PC: {} ===", self.call_stack.len(),
+        //    curr_pc);
         match inst {
             Instruction::Evaluate(ref env, ref datum, tco) => {
-                println!("evaluating {}", datum);
+                //println!("evaluating {}", datum);
                 match datum {
                     &Datum::Symbol(ref s) => {
                         match env.borrow().get(s) {
@@ -108,7 +108,7 @@ impl VirtualMachine {
                         ];
                         if tco {
                             // Replace the current stack frame.
-                            println!("Performing tail-call optimization");
+                            //println!("Performing tail-call optimization");
                             self.call_stack[fp].instructions = instructions;
                             self.call_stack[fp].pc = 0;
                             return Ok(true);
@@ -121,7 +121,7 @@ impl VirtualMachine {
                 }
             },
             Instruction::CallProcedure(env, n) => {
-                println!("calling procedure");
+                //println!("calling procedure");
                 let proc_datum = self.val_stack.pop().unwrap();
                 let top = self.val_stack.len();
                 let mut args = self.val_stack.split_off(top - n);
@@ -135,7 +135,7 @@ impl VirtualMachine {
                         //    Datum::list(full_form)];
                         //args = vec![Datum::list(orig)];
                         args = vec![Datum::list(full_form)];
-                        println!("macro args: {:?}", args);
+                        //println!("macro args: {:?}", args);
                         p
                     },
                     _ => runtime_error!("First element in an expression must be a procedure or macro: {}", proc_datum)
@@ -193,20 +193,20 @@ impl VirtualMachine {
                 };
 
                 // Replace the current stack frame with the procedure call.
-                println!("Calling {:?} with {:?}", procedure, args);
+                //println!("Calling {:?} with {:?}", procedure, args);
                 self.call_stack[fp].instructions = instructions;
                 self.call_stack[fp].pc = 0;
                 return Ok(true);
             },
             Instruction::CallNative(native, n) => {
                 let top = self.val_stack.len();
-                println!("Calling native with {} args. top: {}", n, top);
+                //println!("Calling native with {} args. top: {}", n, top);
                 let args = self.val_stack.split_off(top - n);
                 let result = try!(native.call(&args));
                 self.val_stack.push(result);
             },
             Instruction::Define(env, name, is_syntax) => {
-                println!("Define value in environment");
+                //println!("Define value in environment");
                 if is_syntax {
                     let datum = self.val_stack.pop().unwrap();
                     match datum {
@@ -222,28 +222,28 @@ impl VirtualMachine {
                 }
             },
             Instruction::JumpIfFalse(n) => {
-                println!("Jumping forward {} if datum is false", n);
+                //println!("Jumping forward {} if datum is false", n);
                 let test = self.val_stack.pop().unwrap();
                 match test {
                     // Only #f counts as false.
                     Datum::Boolean(false) => {
-                        println!("Jumping forward {}", n);
+                        //println!("Jumping forward {}", n);
                         self.call_stack[fp].pc += n;
                         return Ok(true);
                     },
-                    _ => println!("Not jumping forward")
+                    _ => () //println!("Not jumping forward")
                 }
             },
             Instruction::PushValue(d) => {
-                println!("Pushing top value: {}", d);
+                //println!("Pushing top value: {}", d);
                 self.val_stack.push(d);
             },
             Instruction::PopValue => {
-                println!("Popping top value");
+                //println!("Popping top value");
                 self.val_stack.pop();
             },
             Instruction::Return => {
-                println!("Returning to previous stack frame");
+                //println!("Returning to previous stack frame");
                 self.call_stack.pop();
                 return Ok(true);
             }
