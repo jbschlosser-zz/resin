@@ -29,35 +29,39 @@ impl Interpreter {
     }
     pub fn run_repl(&self) {
         repl::run("> ", |s| {
-            // Lex.
-            let mut lexer = Lexer::new(s.chars());
-            let tokens = match lexer.lex_all() {
-                Ok(t) => t,
-                Err(e) => return Err(e.msg)
-            };
-
-            // Parse.
-            let mut parser = Parser::new(tokens.into_iter());
-            let data = match parser.parse_all() {
-                Ok(d) => d,
-                Err(e) => return Err(e.msg)
-            };
-
-            if data.len() == 0 {return Err("".to_string());}
-
-            // Evaluate.
-            let mut res = Ok(Datum::EmptyList);
-            for datum in data {
-                res = self.evaluate(&datum);
-            }
-
-            match res {
-                Ok(d) => Ok(format!("{}", d)),
-                Err(e) => return Err(e.msg)
-            }
+            let res = try!(self.evaluate(&s));
+            Ok(format!("{}", res))
         });
     }
-    pub fn evaluate(&self, datum: &Datum) -> Result<Datum, RuntimeError> {
+    pub fn evaluate(&self, s: &str) -> Result<Datum, String> {
+        // Lex.
+        let mut lexer = Lexer::new(s.chars());
+        let tokens = match lexer.lex_all() {
+            Ok(t) => t,
+            Err(e) => return Err(e.msg)
+        };
+
+        // Parse.
+        let mut parser = Parser::new(tokens.into_iter());
+        let data = match parser.parse_all() {
+            Ok(d) => d,
+            Err(e) => return Err(e.msg)
+        };
+
+        if data.len() == 0 {return Err("".to_string());}
+
+        // Evaluate.
+        let mut res = Ok(Datum::EmptyList);
+        for datum in data {
+            res = self.evaluate_datum(&datum);
+        }
+
+        match res {
+            Ok(d) => Ok(d),
+            Err(e) => return Err(e.msg)
+        }
+    }
+    pub fn evaluate_datum(&self, datum: &Datum) -> Result<Datum, RuntimeError> {
         let mut vm = VirtualMachine::new();
         vm.run(self.root.clone(), datum)
     }

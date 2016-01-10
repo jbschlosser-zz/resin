@@ -276,6 +276,11 @@ impl Environment {
     pub fn define(&mut self, name: &str, datum: Datum) {
         self.bindings.insert(name.to_string(), datum);
     }
+    pub fn define_fn<F: Fn(&[Datum]) -> Result<Datum, RuntimeError> + 'static>(
+        &mut self, name: &str, func: F)
+    {
+        self.bindings.insert(name.to_string(), Datum::native(func));
+    }
     pub fn set(&mut self, name: &str, datum: Datum) ->
         Result<(), RuntimeError>
     {
