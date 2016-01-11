@@ -5,7 +5,7 @@ use error::RuntimeError;
 use lexer::Lexer;
 use parser::Parser;
 use repl;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 use vm::VirtualMachine;
 
@@ -21,6 +21,9 @@ impl Interpreter {
             root.define(name, datum);
         }
         Interpreter {root: Rc::new(RefCell::new(root))}
+    }
+    pub fn root<'a>(&'a self) -> Ref<Environment> {
+        self.root.borrow()
     }
     pub fn with_root<F: Fn(&mut Environment)>(&mut self, func: F) {
         use std::ops::DerefMut;
