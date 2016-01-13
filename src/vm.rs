@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    // Evaluates Datum in the Environment with optional tail-call optimization.
-    Evaluate(Rc<RefCell<Environment>>, Datum, bool),
+    // Evaluates the Datum at the top of the val_stack in the Environment with
+    // optional tail-call optimization.
+    Evaluate(Rc<RefCell<Environment>>, bool),
     // Calls procedure at the top of the val_stack with the specified number of
     // args from the val_stack. Note that this replaces the current stack frame
     // with the procedure instructions.
@@ -33,12 +34,13 @@ pub enum Instruction {
 #[derive(Debug)]
 struct StackFrame {
     instructions: Vec<Instruction>,
-    pc: usize
+    pc: usize,
+    expr: Datum
 }
 
 impl StackFrame {
-    pub fn new(instructions: Vec<Instruction>) -> Self {
-        StackFrame {instructions: instructions, pc: 0}
+    pub fn new(instructions: Vec<Instruction>, expr: Datum) -> Self {
+        StackFrame {instructions: instructions, pc: 0, expr: expr}
     }
 }
 
@@ -55,14 +57,24 @@ impl VirtualMachine {
     pub fn run(&mut self, env: Rc<RefCell<Environment>>, datum: &Datum) ->
         Result<Datum, RuntimeError>
     {
-        let initial_frame = StackFrame::new(
-            vec![Instruction::Evaluate(env.clone(), datum.clone(), false)]);
+        let initial_frame = StackFrame::new(vec![
+            Instruction::PushValue(datum.clone()),
+            Instruction::Evaluate(env.clone(), true)
+        ], datum.clone());
         self.call_stack.push(initial_frame);
         while self.call_stack.len() > 0 {
             // Run next instruction.
-            if !try!(self.step()) {
-                // No more instructions in this frame.
-                self.call_stack.pop();
+            match self.step() {
+                Ok(more) => if !more { self.call_stack.pop(); },
+                Err(e) => {
+                    // Print stack trace. TODO: Make this a return value somehow.
+                    let trace_elems: Vec<_> = self.call_stack.iter()
+                        .enumerate()
+                        .map(|(i, frame)| format!("[{}] Evaluating {}", i, frame.expr))
+                        .collect();
+                    println!("Stack trace:\n{}\n", trace_elems.join("\n"));
+                    return Err(e);
+                }
             }
         }
         // TODO: Return last from val_stack.
@@ -80,48 +92,54 @@ impl VirtualMachine {
         //println!("=== Running instruction. Stack: {} PC: {} ===", self.call_stack.len(),
         //    curr_pc);
         match inst {
-            Instruction::Evaluate(ref env, ref datum, tco) => {
+            Instruction::Evaluate(ref env, tco) => {
+                let datum = self.val_stack.pop()
+                    .expect("Expected expression to evaluate");
                 //println!("evaluating {}", datum);
                 match datum {
-                    &Datum::Symbol(ref s) => {
+                    Datum::Symbol(ref s) => {
                         match env.borrow().get(s) {
-                            Some(d) => self.val_stack.push(d.clone()),
+                            Some(d) => self.val_stack.push(d),
                             None => runtime_error!("Undefined identifier: {}",
                                 datum)
                         }
                     },
-                    d @ &Datum::String(_) | d @ &Datum::Character(_) |
-                    d @ &Datum::Number(_) | d @ &Datum::Boolean(_) |
-                    d @ &Datum::Procedure(_) | d @ &Datum::Vector(_) |
-                    d @ &Datum::SyntaxRule(..) => {
-                        self.val_stack.push(d.clone());
+                    d @ Datum::String(_) | d @ Datum::Character(_) |
+                    d @ Datum::Number(_) | d @ Datum::Boolean(_) |
+                    d @ Datum::Procedure(_) | d @ Datum::Vector(_) |
+                    d @ Datum::SyntaxRule(..) => {
+                        self.val_stack.push(d);
                     },
-                    &Datum::Pair(ref car, ref cdr) => {
+                    Datum::Pair(car, cdr) => {
                         let args = try!(cdr.to_vec());
                         let arg_len = args.len();
                         for arg in args {
                             self.val_stack.push(arg);
                         }
                         let instructions = vec![
-                            Instruction::Evaluate(env.clone(),*car.clone(),tco),
+                            Instruction::PushValue(*car.clone()),
+                            Instruction::Evaluate(env.clone(), false),
                             Instruction::CallProcedure(env.clone(), arg_len)
                         ];
+                        let pair = Datum::Pair(car, cdr);
                         if tco {
                             // Replace the current stack frame.
                             //println!("Performing tail-call optimization");
                             self.call_stack[fp].instructions = instructions;
                             self.call_stack[fp].pc = 0;
+                            self.call_stack[fp].expr = pair;
                             return Ok(true);
                         } else {
-                            self.call_stack.push(StackFrame::new(instructions));
+                            self.call_stack.push(
+                                StackFrame::new(instructions, pair));
                         }
                     },
-                    &Datum::EmptyList =>
+                    Datum::EmptyList =>
                         runtime_error!("Cannot evaluate empty list ()"),
                 }
             },
             Instruction::CallProcedure(env, n) => {
-                //println!("calling procedure");
+                //println!("calling procedure with {} args", n);
                 let proc_datum = self.val_stack.pop().unwrap();
                 let top = self.val_stack.len();
                 let mut args = self.val_stack.split_off(top - n);
@@ -131,9 +149,6 @@ impl VirtualMachine {
                         // Pass the whole form as input to the syntax rule.
                         let mut full_form = vec![Datum::Symbol(name)];
                         full_form.append(&mut args);
-                        //let orig = vec![Datum::symbol("quote"),
-                        //    Datum::list(full_form)];
-                        //args = vec![Datum::list(orig)];
                         args = vec![Datum::list(full_form)];
                         //println!("macro args: {:?}", args);
                         p
@@ -145,11 +160,13 @@ impl VirtualMachine {
                         try!(special.call(env, &args))
                     },
                     Procedure::Native(ref native) => {
-                        // TODO: Evaluate args beforehand.
-                        let mut instructions: Vec<Instruction> =
-                            args.iter().map(|a| Instruction::Evaluate(
-                                env.clone(), a.clone(), false))
-                            .collect();
+                        let mut instructions = Vec::new();
+                        for arg in args.iter() {
+                            instructions.push(
+                                Instruction::PushValue(arg.clone()));
+                            instructions.push(
+                                Instruction::Evaluate(env.clone(), false));
+                        }
                         instructions.push(Instruction::CallNative(
                             native.clone(), args.len()));
                         instructions
@@ -170,8 +187,10 @@ impl VirtualMachine {
                             Environment::with_parent(saved_env.clone())));
                         let mut body_instructions = Vec::new();
                         for(name, arg) in arg_names.iter().zip(args.iter()) {
-                            body_instructions.push(Instruction::Evaluate(
-                                env.clone(), arg.clone(), false));
+                            body_instructions.push(
+                                Instruction::PushValue(arg.clone()));
+                            body_instructions.push(
+                                Instruction::Evaluate(env.clone(), false));
                             body_instructions.push(Instruction::Define(
                                 proc_env.clone(), name.clone(), false));
                         }
@@ -179,8 +198,10 @@ impl VirtualMachine {
                         // Evaluate the procedure body in the new environment.
                         for (i, expr) in body_data.iter().enumerate() {
                             let last = i == body_data.len() - 1;
-                            body_instructions.push(Instruction::Evaluate(
-                                proc_env.clone(), expr.clone(), last));
+                            body_instructions.push(
+                                Instruction::PushValue(expr.clone()));
+                            body_instructions.push(
+                                Instruction::Evaluate(proc_env.clone(), last));
                             if !last {
                                 // Throw away the result of every expr but the
                                 // last.

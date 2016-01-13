@@ -46,7 +46,10 @@ fn special_form_begin(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     let mut instructions = Vec::new();
     for (i, arg) in args.iter().enumerate() {
         let last = i == args.len() - 1;
-        instructions.push(Instruction::Evaluate(env.clone(),arg.clone(),last));
+        instructions.push(
+            Instruction::PushValue(arg.clone()));
+        instructions.push(
+            Instruction::Evaluate(env.clone(), last));
         if !last {
             instructions.push(Instruction::PopValue);
         }
@@ -64,7 +67,8 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
         _ => runtime_error!("Expected symbol")
     };
     let instructions = vec![
-        Instruction::Evaluate(env.clone(), args[1].clone(), false),
+        Instruction::PushValue(args[1].clone()),
+        Instruction::Evaluate(env.clone(), false),
         Instruction::Define(env.clone(), name, false),
         // Return value is unspecified in the spec.
         Instruction::PushValue(Datum::EmptyList)
@@ -81,7 +85,8 @@ fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
         _ => runtime_error!("Expected symbol")
     };
     let instructions = vec![
-        Instruction::Evaluate(env.clone(), args[1].clone(), false),
+        Instruction::PushValue(args[1].clone()),
+        Instruction::Evaluate(env.clone(), false),
         Instruction::Define(env.clone(), name, true),
         // Return value is unspecified in the spec.
         Instruction::PushValue(Datum::EmptyList)
@@ -96,18 +101,21 @@ fn special_form_if(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
         runtime_error!("Expected 2 or 3 args");
     }
 
-    let instructions = vec![
-        Instruction::Evaluate(env.clone(), args[0].clone(), false),
-        Instruction::JumpIfFalse(3),
-        Instruction::Evaluate(env.clone(), args[1].clone(), true),
-        Instruction::Return,
-        if args.len() == 3 {
-            Instruction::Evaluate(env.clone(), args[2].clone(), true)
-        } else {
-            // Unspecified in the spec.
-            Instruction::Evaluate(env.clone(), Datum::Boolean(false), true)
-        }
+    let mut instructions = vec![
+        Instruction::PushValue(args[0].clone()),
+        Instruction::Evaluate(env.clone(), false),
+        Instruction::JumpIfFalse(4),
+        Instruction::PushValue(args[1].clone()),
+        Instruction::Evaluate(env.clone(), true),
+        Instruction::Return
     ];
+    if args.len() == 3 {
+        instructions.push(Instruction::PushValue(args[2].clone()));
+        instructions.push(Instruction::Evaluate(env.clone(), true));
+    } else {
+        // Unspecified in the spec.
+        instructions.push(Instruction::PushValue(Datum::Boolean(false)));
+    }
 
     Ok(instructions)
 }
@@ -151,7 +159,8 @@ fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             Datum::Symbol(ref s) => s.to_string(),
             _ => runtime_error!("{}", &usage_str)
         };
-        instructions.push(Instruction::Evaluate(env.clone(), init, false));
+        instructions.push(Instruction::PushValue(init));
+        instructions.push(Instruction::Evaluate(env.clone(), false));
         instructions.push(
             Instruction::Define(let_env.clone(), var_name, false));
     }
@@ -159,7 +168,8 @@ fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     // Add the instructions for evaluating the body within the sub-environment.
     for (i, arg) in args.iter().skip(1).enumerate() {
         let last = i == args.len() - 2;
-        instructions.push(Instruction::Evaluate(let_env.clone(),arg.clone(),last));
+        instructions.push(Instruction::PushValue(arg.clone()));
+        instructions.push(Instruction::Evaluate(let_env.clone(), last));
         if !last {
             instructions.push(Instruction::PopValue);
         }
@@ -292,8 +302,10 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     let result = try!(apply_template(&renamed_template,
                         &var_env));
                     //println!(">>> result: {}", result);
-                    return Ok(vec![Instruction::Evaluate(eval_env.clone(),
-                        result, false)]);
+                    return Ok(vec![
+                        Instruction::PushValue(result),
+                        Instruction::Evaluate(eval_env.clone(), false)
+                    ]);
                 },
                 None => ()
             }
