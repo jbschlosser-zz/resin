@@ -1,4 +1,4 @@
-use datum::{Datum, NativeProcedure, Procedure, SchemeProcedure};
+use datum::{Datum, NativeProcedure, Procedure};
 use environment::Environment;
 use error::RuntimeError;
 use std::cell::RefCell;
@@ -15,7 +15,7 @@ pub enum Instruction {
     CallProcedure(Rc<RefCell<Environment>>, usize),
     // Calls the native procedure with the specified number of args from the
     // val_stack.
-    CallNative(NativeProcedure, usize),
+    CallNative(Rc<NativeProcedure>, usize),
     // Defines the symbol corresponding with the String to the Datum at the
     // top of the val_stack. The last flag indicates whether a syntax is
     // being defined.
@@ -171,9 +171,12 @@ impl VirtualMachine {
                             native.clone(), args.len()));
                         instructions
                     },
-                    Procedure::Scheme(SchemeProcedure {
-                        ref arg_names, ref body_data, ref saved_env }) =>
+                    Procedure::Scheme(ref s) =>/*SchemeProcedure {
+                        ref arg_names, ref body_data, ref saved_env }) =>*/
                     {
+                        let ref arg_names = s.arg_names;
+                        let ref body_data = s.body_data;
+                        let ref saved_env = s.saved_env;
                         if arg_names.len() != args.len() {
                             runtime_error!("Expected {} argument(s) to function",
                                 arg_names.len());

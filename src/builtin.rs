@@ -1,4 +1,4 @@
-use datum::Datum;
+use datum::{Datum, Procedure};
 use environment::Environment;
 use error::RuntimeError;
 use std::cell::RefCell;
@@ -12,6 +12,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("begin", Datum::special(special_form_begin)),
         ("define", Datum::special(special_form_define)),
         ("define-syntax", Datum::special(special_form_define_syntax)),
+        ("eval", Datum::special(special_form_eval)),
         ("if", Datum::special(special_form_if)),
         ("lambda", Datum::special(special_form_lambda)),
         ("letrec", Datum::special(special_form_letrec)),
@@ -26,7 +27,15 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("car", Datum::native(native_car)),
         ("cdr", Datum::native(native_cdr)),
         ("cons", Datum::native(native_cons)),
+        ("eq?", Datum::native(native_eqv_p)), // same as eqv?
+        ("equal?", Datum::native(native_equal_p)),
+        ("eqv?", Datum::native(native_eqv_p)),
+        ("length", Datum::native(native_length)),
+        ("list", Datum::native(native_list)),
         ("null?", Datum::native(native_null_p)),
+        ("string=?", Datum::native(native_string_equal_p)),
+        ("string->symbol", Datum::native(native_string_to_symbol)),
+        ("symbol->string", Datum::native(native_symbol_to_string)),
 
         ("boolean?", Datum::native(native_boolean_p)),
         ("char?", Datum::native(native_char_p)),
@@ -91,6 +100,18 @@ fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
         Instruction::Define(env.clone(), name, true),
         // Return value is unspecified in the spec.
         Instruction::PushValue(Datum::EmptyList)
+    ];
+    Ok(instructions)
+}
+
+fn special_form_eval(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Vec<Instruction>, RuntimeError>
+{
+    if args.len() != 1 { runtime_error!("Expected 1 arg"); }
+    let instructions = vec![
+        Instruction::PushValue(args[0].clone()),
+        Instruction::Evaluate(env.clone(), false),
+        Instruction::Evaluate(env.clone(), false),
     ];
     Ok(instructions)
 }
@@ -721,6 +742,124 @@ fn native_multiply(args: &[Datum]) -> Result<Datum, RuntimeError> {
     Ok(Datum::Number(product))
 }
 
+fn native_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 2 {
+        runtime_error!("Expected 2 args");
+    }
+
+    match (&args[0], &args[1]) {
+        (&Datum::Boolean(ref b1), &Datum::Boolean(ref b2)) =>
+            Ok(Datum::Boolean(b1 == b2)),
+        (&Datum::Symbol(ref s1), &Datum::Symbol(ref s2)) =>
+            Ok(Datum::Boolean(s1 == s2)),
+        (&Datum::Number(ref n1), &Datum::Number(ref n2)) =>
+            Ok(Datum::Boolean(n1 == n2)),
+        (&Datum::Character(ref c1), &Datum::Character(ref c2)) =>
+            Ok(Datum::Boolean(c1 == c2)),
+        (&Datum::EmptyList, &Datum::EmptyList) => Ok(Datum::Boolean(true)),
+        (&Datum::Procedure(ref p1), &Datum::Procedure(ref p2)) => {
+            match (p1, p2) {
+                // Note: compare pointers here.
+                (&Procedure::SpecialForm(ref s1),
+                    &Procedure::SpecialForm(ref s2)) =>
+                        Ok(Datum::Boolean(&(**s1) as *const _ ==
+                                          &(**s2) as *const _)),
+                (&Procedure::Native(ref n1),
+                    &Procedure::Native(ref n2)) =>
+                        Ok(Datum::Boolean(&(**n1) as *const _ ==
+                                          &(**n2) as *const _)),
+                (&Procedure::Scheme(ref s1),
+                    &Procedure::Scheme(ref s2)) =>
+                        Ok(Datum::Boolean(&(**s1) as *const _ ==
+                                          &(**s2) as *const _)),
+                _ => Ok(Datum::Boolean(false))
+            }
+        },
+        (&Datum::Pair(ref car1, ref cdr1),&Datum::Pair(ref car2, ref cdr2)) => {
+            let car_result = try!(
+                native_equal_p(&vec![*car1.clone(), *car2.clone()]));
+            let cdr_result = try!(
+                native_equal_p(&vec![*cdr1.clone(), *cdr2.clone()]));
+            Ok(Datum::Boolean(match (car_result, cdr_result) {
+                (Datum::Boolean(false), _) => false,
+                (_, Datum::Boolean(false)) => false,
+                _ => true
+            }))
+        },
+        (&Datum::Vector(ref v1), &Datum::Vector(ref v2)) => {
+            if v1.borrow().len() != v2.borrow().len() {
+                return Ok(Datum::Boolean(false));
+            }
+            for (e1, e2) in v1.borrow().iter().zip(v2.borrow().iter()) {
+                match try!(native_equal_p(&vec![e1.clone(), e2.clone()])) {
+                    d @ Datum::Boolean(false) => return Ok(d),
+                    _ => ()
+                }
+            }
+            Ok(Datum::Boolean(true))
+        },
+        (&Datum::String(ref s1), &Datum::String(ref s2)) =>
+            Ok(Datum::Boolean(s1 == s2)),
+        _ => Ok(Datum::Boolean(false))
+    }
+}
+
+fn native_eqv_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 2 {
+        runtime_error!("Expected 2 args");
+    }
+
+    match (&args[0], &args[1]) {
+        (&Datum::Boolean(ref b1), &Datum::Boolean(ref b2)) =>
+            Ok(Datum::Boolean(b1 == b2)),
+        (&Datum::Symbol(ref s1), &Datum::Symbol(ref s2)) =>
+            Ok(Datum::Boolean(s1 == s2)),
+        (&Datum::Number(ref n1), &Datum::Number(ref n2)) =>
+            Ok(Datum::Boolean(n1 == n2)),
+        (&Datum::Character(ref c1), &Datum::Character(ref c2)) =>
+            Ok(Datum::Boolean(c1 == c2)),
+        (&Datum::EmptyList, &Datum::EmptyList) => Ok(Datum::Boolean(true)),
+        (&Datum::Procedure(ref p1), &Datum::Procedure(ref p2)) => {
+            match (p1, p2) {
+                // Note: compare pointers here.
+                (&Procedure::SpecialForm(ref s1),
+                    &Procedure::SpecialForm(ref s2)) =>
+                        Ok(Datum::Boolean(&(**s1) as *const _ ==
+                                          &(**s2) as *const _)),
+                (&Procedure::Native(ref n1),
+                    &Procedure::Native(ref n2)) =>
+                        Ok(Datum::Boolean(&(**n1) as *const _ ==
+                                          &(**n2) as *const _)),
+                (&Procedure::Scheme(ref s1),
+                    &Procedure::Scheme(ref s2)) =>
+                        Ok(Datum::Boolean(&(**s1) as *const _ ==
+                                          &(**s2) as *const _)),
+                _ => Ok(Datum::Boolean(false))
+            }
+        },
+        (&Datum::Vector(ref v1), &Datum::Vector(ref v2)) =>
+            Ok(Datum::Boolean(&(**v1) as *const _ ==
+                              &(**v2) as *const _)),
+        (&Datum::Pair(..), &Datum::Pair(..)) | 
+        (&Datum::String(..), &Datum::String(..)) =>
+            Ok(Datum::Boolean(false)),
+        _ => Ok(Datum::Boolean(false))
+    }
+}
+
+fn native_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 1 {
+        runtime_error!("Expected 1 arg");
+    }
+
+    Ok(Datum::Number(try!(args[0].to_vec()).len() as i64))
+}
+
+fn native_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    let elements: Vec<_> = args.iter().map(|e| e.clone()).collect();
+    Ok(Datum::list(elements))
+}
+
 fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     if args.len() != 1 {
         runtime_error!("Expected 1 arg");
@@ -729,6 +868,40 @@ fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     match args[0] {
         Datum::EmptyList => Ok(Datum::Boolean(true)),
         _ => Ok(Datum::Boolean(false))
+    }
+}
+
+fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 2 {
+        runtime_error!("Expected 2 args");
+    }
+
+    match (&args[0], &args[1]) {
+        (&Datum::String(ref s1), &Datum::String(ref s2)) =>
+            Ok(Datum::Boolean(s1 == s2)),
+        _ => runtime_error!("Usage: (string=? string1 string2)")
+    }
+}
+
+fn native_string_to_symbol(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 1 {
+        runtime_error!("Expected 1 arg");
+    }
+
+    match args[0] {
+        Datum::String(ref s) => Ok(Datum::Symbol(s.clone())),
+        _ => runtime_error!("Usage: (string->symbol string)")
+    }
+}
+
+fn native_symbol_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 1 {
+        runtime_error!("Expected 1 arg");
+    }
+
+    match args[0] {
+        Datum::Symbol(ref s) => Ok(Datum::String(s.clone())),
+        _ => runtime_error!("Usage: (symbol->string symbol)")
     }
 }
 

@@ -92,23 +92,23 @@ impl Datum {
     pub fn special<T: Fn(Rc<RefCell<Environment>>, &[Datum]) ->
         Result<Vec<Instruction>, RuntimeError> + 'static>(t: T) -> Datum
     {
-        Datum::Procedure(Procedure::SpecialForm(SpecialForm(
-            Rc::new(Box::new(t)))))
+        Datum::Procedure(Procedure::SpecialForm(Rc::new(SpecialForm(
+            Box::new(t)))))
     }
     pub fn native<T: Fn(&[Datum]) ->
         Result<Datum, RuntimeError> + 'static>(t: T) -> Datum
     {
-        Datum::Procedure(Procedure::Native(NativeProcedure(
-            Rc::new(Box::new(t)))))
+        Datum::Procedure(Procedure::Native(Rc::new(NativeProcedure(
+            Box::new(t)))))
     }
     pub fn scheme(arg_names: Vec<String>, body_data: Vec<Datum>,
         saved_env: Rc<RefCell<Environment>>) -> Datum
     {
-        Datum::Procedure(Procedure::Scheme(SchemeProcedure {
+        Datum::Procedure(Procedure::Scheme(Rc::new(SchemeProcedure {
             arg_names: arg_names,
             body_data: body_data,
             saved_env: saved_env
-        }))
+        })))
     }
     pub fn list(elements: Vec<Datum>) -> Datum {
         let mut list = Datum::EmptyList;
@@ -167,17 +167,16 @@ impl Datum {
     }
 }
 
-#[derive(Clone)]
 pub enum Procedure {
-    SpecialForm(SpecialForm),
-    Native(NativeProcedure),
-    Scheme(SchemeProcedure)
+    SpecialForm(Rc<SpecialForm>),
+    Native(Rc<NativeProcedure>),
+    Scheme(Rc<SchemeProcedure>)
 }
 
-pub struct SpecialForm(Rc<Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
-    Result<Vec<Instruction>, RuntimeError>>>);
-pub struct NativeProcedure(Rc<Box<Fn(&[Datum]) ->
-    Result<Datum, RuntimeError>>>);
+pub struct SpecialForm(Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+    Result<Vec<Instruction>, RuntimeError>>);
+pub struct NativeProcedure(Box<Fn(&[Datum]) ->
+    Result<Datum, RuntimeError>>);
 pub struct SchemeProcedure {
     pub arg_names: Vec<String>,
     pub body_data: Vec<Datum>,
@@ -187,12 +186,6 @@ pub struct SchemeProcedure {
 impl fmt::Debug for SpecialForm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "#<special-form>")
-    }
-}
-
-impl Clone for SpecialForm {
-    fn clone(&self) -> Self {
-        SpecialForm(self.0.clone())
     }
 }
 
@@ -210,12 +203,6 @@ impl fmt::Debug for NativeProcedure {
     }
 }
 
-impl Clone for NativeProcedure {
-    fn clone(&self) -> Self {
-        NativeProcedure(self.0.clone())
-    }
-}
-
 impl NativeProcedure {
     pub fn call(&self, args: &[Datum]) ->
         Result<Datum, RuntimeError>
@@ -230,23 +217,23 @@ impl fmt::Debug for SchemeProcedure {
     }
 }
 
-impl Clone for SchemeProcedure {
-    fn clone(&self) -> Self {
-        SchemeProcedure {
-            arg_names: self.arg_names.clone(),
-            body_data: self.body_data.clone(),
-            saved_env: self.saved_env.clone()
-        }
-    }
-}
-
 impl fmt::Debug for Procedure {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             // TODO: Implement this properly.
             Procedure::Native(ref n) => n.fmt(f),
-            Procedure::Scheme(..) => write!(f, "#<procedure-scheme>"),
+            Procedure::Scheme(ref s) => s.fmt(f),
             Procedure::SpecialForm(ref s) => s.fmt(f)
+        }
+    }
+}
+
+impl Clone for Procedure {
+    fn clone(&self) -> Self {
+        match self {
+            &Procedure::SpecialForm(ref r) => Procedure::SpecialForm(r.clone()),
+            &Procedure::Native(ref r) => Procedure::Native(r.clone()),
+            &Procedure::Scheme(ref r) => Procedure::Scheme(r.clone())
         }
     }
 }
