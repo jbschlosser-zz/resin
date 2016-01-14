@@ -20,7 +20,10 @@ impl Interpreter {
         for (name, datum) in builtin::get_builtins() {
             root.define(name, datum);
         }
-        Interpreter {root: Rc::new(RefCell::new(root))}
+        let interp = Interpreter {root: Rc::new(RefCell::new(root))};
+        interp.evaluate(include_str!("core.scm"))
+            .expect("Error in the core scheme library");
+        interp
     }
     pub fn root<'a>(&'a self) -> Ref<Environment> {
         self.root.borrow()

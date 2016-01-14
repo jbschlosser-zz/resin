@@ -14,7 +14,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("define-syntax", Datum::special(special_form_define_syntax)),
         ("if", Datum::special(special_form_if)),
         ("lambda", Datum::special(special_form_lambda)),
-        ("let", Datum::special(special_form_let)),
+        ("letrec", Datum::special(special_form_letrec)),
         ("quote", Datum::special(special_form_quote)),
         ("set!", Datum::special(special_form_define)),
         ("syntax-rules", Datum::special(special_form_syntax_rules)),
@@ -26,6 +26,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("car", Datum::native(native_car)),
         ("cdr", Datum::native(native_cdr)),
         ("cons", Datum::native(native_cons)),
+        ("null?", Datum::native(native_null_p)),
 
         ("boolean?", Datum::native(native_boolean_p)),
         ("char?", Datum::native(native_char_p)),
@@ -137,11 +138,11 @@ fn special_form_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Ok(vec![Instruction::PushValue(lambda)])
 }
 
-fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+fn special_form_letrec(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     let usage_str =
-        format!("Usage: (let ((variable init) ...) body ...)");
+        format!("Usage: (letrec ((variable init) ...) body ...)");
     if args.len() < 2 { runtime_error!("{}", &usage_str); }
 
     // Parse the bindings and add instructions for evaluating the initial
@@ -160,7 +161,7 @@ fn special_form_let(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             _ => runtime_error!("{}", &usage_str)
         };
         instructions.push(Instruction::PushValue(init));
-        instructions.push(Instruction::Evaluate(env.clone(), false));
+        instructions.push(Instruction::Evaluate(let_env.clone(), false));
         instructions.push(
             Instruction::Define(let_env.clone(), var_name, false));
     }
@@ -718,6 +719,17 @@ fn native_multiply(args: &[Datum]) -> Result<Datum, RuntimeError> {
     }
 
     Ok(Datum::Number(product))
+}
+
+fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 1 {
+        runtime_error!("Expected 1 arg");
+    }
+
+    match args[0] {
+        Datum::EmptyList => Ok(Datum::Boolean(true)),
+        _ => Ok(Datum::Boolean(false))
+    }
 }
 
 macro_rules! datum_predicate{
