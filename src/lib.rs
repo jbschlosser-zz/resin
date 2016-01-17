@@ -9,6 +9,7 @@ mod repl;
 mod builtin;
 mod interpreter;
 mod vm;
+#[cfg(test)] mod tests;
 
 pub use datum::{Datum, Procedure};
 pub use environment::Environment;

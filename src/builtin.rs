@@ -51,8 +51,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
 fn special_form_begin(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() == 0 { runtime_error!("Expected at least 1 arg"); }
-
+    expect_args!(args >= 1);
     let mut instructions = Vec::new();
     for (i, arg) in args.iter().enumerate() {
         let last = i == args.len() - 1;
@@ -71,11 +70,8 @@ fn special_form_begin(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() != 2 { runtime_error!("Expected 2 args"); }
-    let name = match args[0] {
-        Datum::Symbol(ref s) => s.clone(),
-        _ => runtime_error!("Expected symbol")
-    };
+    expect_args!(args == 2);
+    let name = try_unwrap_arg!(args[0] => Symbol).clone();
     let instructions = vec![
         Instruction::PushValue(args[1].clone()),
         Instruction::Evaluate(env.clone(), false),
@@ -89,11 +85,8 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() != 2 { runtime_error!("Expected 2 args"); }
-    let name = match args[0] {
-        Datum::Symbol(ref s) => s.clone(),
-        _ => runtime_error!("Expected symbol")
-    };
+    expect_args!(args == 2);
+    let name = try_unwrap_arg!(args[0] => Symbol).clone();
     let instructions = vec![
         Instruction::PushValue(args[1].clone()),
         Instruction::Evaluate(env.clone(), false),
@@ -107,7 +100,7 @@ fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_eval(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() != 1 { runtime_error!("Expected 1 arg"); }
+    expect_args!(args == 1);
     let instructions = vec![
         Instruction::PushValue(args[0].clone()),
         Instruction::Evaluate(env.clone(), false),
@@ -145,14 +138,11 @@ fn special_form_if(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() < 2 { runtime_error!("Expected at least 2 args"); }
+    expect_args!(args >= 2);
     // TODO: Handle additional formal possibilities (e.g. ellipses).
     let mut arg_names = Vec::new();
     for formal in try!(args[0].to_vec()) {
-        match formal {
-            Datum::Symbol(s) => arg_names.push(s.clone()),
-            _ => runtime_error!("Expected symbol in lambda formals")
-        }
+        arg_names.push(try_unwrap_arg!(formal => Symbol).clone());
     }
     let body = Vec::from(&args[1..]);
     let lambda = Datum::scheme(arg_names, body, env.clone());
@@ -202,8 +192,7 @@ fn special_form_letrec(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_quote(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    if args.len() != 1 { runtime_error!("Expected 1 arg"); }
-
+    expect_args!(args == 1);
     Ok(vec![Instruction::PushValue(args[0].clone())])
 }
 fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
@@ -276,7 +265,6 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             },
             _ => runtime_error!("Cannot apply syntax-rules to non-list")
         };
-        //println!("macro name: {}", macro_name);
 
         // Try to match against each pattern in order.
         for &(ref pattern, ref template, ref template_syms, ref free_env) in
@@ -303,7 +291,6 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     name_mappings.insert(macro_name.clone(),macro_name.clone());
                     let renamed_template = rename_template(&template,
                         &name_mappings);
-                    //println!("name mappings: {:?}", name_mappings);
                     
                     // The evaluation environment for the template
                     // is the current environment plus the values of
@@ -319,11 +306,8 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     }
 
                     // Apply the template.
-                    //println!(">>> matched pattern: {}", pattern);
-                    //println!(">>> applying template: {}", renamed_template);
                     let result = try!(apply_template(&renamed_template,
                         &var_env));
-                    //println!(">>> result: {}", result);
                     return Ok(vec![
                         Instruction::PushValue(result),
                         Instruction::Evaluate(eval_env.clone(), false)
@@ -657,30 +641,19 @@ fn apply_template(template: &Datum, var_env: &Environment) ->
 fn native_add(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let mut sum = 0;
     for a in args {
-        sum += match a {
-            &Datum::Number(n) => n,
-            _ => runtime_error!("Expected number")
-        };
+        sum += try_unwrap_arg!(*a => i64);
     }
 
     Ok(Datum::Number(sum))
 }
 
 fn native_subtract(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() < 1 { runtime_error!("Expected 1 arg"); }
+    expect_args!(args >= 1);
 
     let mut difference = 0;
     for (i, a) in args.iter().enumerate() {
-        match a {
-            &Datum::Number(n) => {
-                if i == 0 {
-                    difference = n;
-                } else {
-                    difference -= n;
-                }
-            },
-            _ => runtime_error!("Expected number")
-        };
+        let n = try_unwrap_arg!(*a => i64);
+        difference = if i == 0 { n } else { difference - n };
     }
 
     // Handle unary case.
@@ -689,7 +662,7 @@ fn native_subtract(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_car(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 { runtime_error!("Expected 1 arg"); }
+    expect_args!(args == 1);
     match args[0] {
         Datum::Pair(ref car, _) => Ok(*car.clone()),
         _ => runtime_error!("Expected pair")
@@ -697,7 +670,7 @@ fn native_car(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_cdr(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 { runtime_error!("Expected 1 arg"); }
+    expect_args!(args == 1);
     match args[0] {
         Datum::Pair(_, ref cdr) => Ok(*cdr.clone()),
         _ => runtime_error!("Expected pair")
@@ -705,7 +678,7 @@ fn native_cdr(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_cons(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 2 { runtime_error!("Expected 2 args"); }
+    expect_args!(args == 2);
     Ok(Datum::Pair(Box::new(args[0].clone()), Box::new(args[1].clone())))
 }
 
@@ -721,10 +694,7 @@ fn native_equals(args: &[Datum]) -> Result<Datum, RuntimeError> {
 
     let mut res = true;
     for a in &args[1..] {
-        res = res && match a {
-            &Datum::Number(n) => n == first,
-            _ => runtime_error!("Expected number")
-        };
+        res = res && (try_unwrap_arg!(*a => i64) == first);
     }
 
     Ok(Datum::Boolean(res))
@@ -733,19 +703,14 @@ fn native_equals(args: &[Datum]) -> Result<Datum, RuntimeError> {
 fn native_multiply(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let mut product = 1;
     for a in args {
-        product *= match a {
-            &Datum::Number(n) => n,
-            _ => runtime_error!("Expected number")
-        };
+        product *= try_unwrap_arg!(*a => i64);
     }
 
     Ok(Datum::Number(product))
 }
 
 fn native_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 2 {
-        runtime_error!("Expected 2 args");
-    }
+    expect_args!(args == 2);
 
     match (&args[0], &args[1]) {
         (&Datum::Boolean(ref b1), &Datum::Boolean(ref b2)) =>
@@ -807,9 +772,7 @@ fn native_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_eqv_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 2 {
-        runtime_error!("Expected 2 args");
-    }
+    expect_args!(args == 2);
 
     match (&args[0], &args[1]) {
         (&Datum::Boolean(ref b1), &Datum::Boolean(ref b2)) =>
@@ -850,10 +813,7 @@ fn native_eqv_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 {
-        runtime_error!("Expected 1 arg");
-    }
-
+    expect_args!(args == 1);
     Ok(Datum::Number(try!(args[0].to_vec()).len() as i64))
 }
 
@@ -863,10 +823,7 @@ fn native_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 {
-        runtime_error!("Expected 1 arg");
-    }
-
+    expect_args!(args == 1);
     match args[0] {
         Datum::EmptyList => Ok(Datum::Boolean(true)),
         _ => Ok(Datum::Boolean(false))
@@ -874,10 +831,7 @@ fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 2 {
-        runtime_error!("Expected 2 args");
-    }
-
+    expect_args!(args == 2);
     match (&args[0], &args[1]) {
         (&Datum::String(ref s1), &Datum::String(ref s2)) =>
             Ok(Datum::Boolean(s1 == s2)),
@@ -886,31 +840,21 @@ fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
 }
 
 fn native_string_to_symbol(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 {
-        runtime_error!("Expected 1 arg");
-    }
-
-    match args[0] {
-        Datum::String(ref s) => Ok(Datum::Symbol(s.clone())),
-        _ => runtime_error!("Usage: (string->symbol string)")
-    }
+    expect_args!(args == 1);
+    let s = try_unwrap_arg!(args[0] => String).clone();
+    Ok(Datum::Symbol(s))
 }
 
 fn native_symbol_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
-    if args.len() != 1 {
-        runtime_error!("Expected 1 arg");
-    }
-
-    match args[0] {
-        Datum::Symbol(ref s) => Ok(Datum::String(s.clone())),
-        _ => runtime_error!("Usage: (symbol->string symbol)")
-    }
+    expect_args!(args == 1);
+    let s = try_unwrap_arg!(args[0] => Symbol).clone();
+    Ok(Datum::String(s))
 }
 
 macro_rules! datum_predicate{
     ($dtype:path, $func:ident) => (
         fn $func(args: &[Datum]) -> Result<Datum, RuntimeError> {
-            if args.len() != 1 { runtime_error!("Expected 1 arg"); }
+            expect_args!(args == 1);
 
             match args[0] {
                 $dtype(..) => Ok(Datum::Boolean(true)),

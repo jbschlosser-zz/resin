@@ -118,7 +118,7 @@ impl fmt::Display for Datum {
         match self {
             &Datum::Symbol(ref s) => write!(f, "{}", &s),
             &Datum::String(ref s) => write!(f, "\"{}\"", &s),
-            &Datum::Character(ref c) => write!(f, "\\#{}", c),
+            &Datum::Character(ref c) => write!(f, "#\\{}", c),
             &Datum::Number(ref n) => write!(f, "{}", n),
             &Datum::Boolean(ref b) => write!(f, "#{}", if *b {'t'} else {'f'}),
             &Datum::Vector(ref v) => {

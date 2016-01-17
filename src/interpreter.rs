@@ -73,30 +73,3 @@ impl Interpreter {
         vm.run(self.root.clone(), datum)
     }
 }
-
-#[test]
-fn string_evaluates_to_self() {
-    let interp = Interpreter::new();
-    assert!(interp.evaluate(&Datum::string("test")) ==
-        Ok(Datum::string("test")));
-}
-#[test]
-fn character_evaluates_to_self() {
-    let interp = Interpreter::new();
-    assert!(interp.evaluate(&Datum::Character('a')) ==
-        Ok(Datum::Character('a')));
-}
-#[test]
-fn number_evaluates_to_self() {
-    let interp = Interpreter::new();
-    assert!(interp.evaluate(&Datum::Number(2)) ==
-        Ok(Datum::Number(2)));
-}
-#[test]
-fn boolean_evaluates_to_self() {
-    let interp = Interpreter::new();
-    assert!(interp.evaluate(&Datum::Boolean(false)) ==
-        Ok(Datum::Boolean(false)));
-    assert!(interp.evaluate(&Datum::Boolean(true)) ==
-        Ok(Datum::Boolean(true)));
-}
