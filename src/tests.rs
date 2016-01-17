@@ -26,10 +26,11 @@ fn test_basic_evaluation() {
     systest!("#\\a" => "#\\a");
     systest!("\"hello world\"" => "\"hello world\"");
     systest!("#(1 2 3)" => "#(1 2 3)");
+    systest!("'a" => "a");
     systest!("()" => Error);
     systest!("'()" => "()");
+    systest!("(quote ())" => "()");
     systest!("'(1 2 3)" => "(1 2 3)");
-    systest!("(+ 2 2)" => "4");
 }
 
 #[test]
@@ -59,4 +60,78 @@ fn test_begin_form() {
     systest!("(begin)" => Error);
     systest!("(begin 1)" => "1");
     systest!("(begin 1 2 3)" => "3");
+}
+
+#[test]
+fn test_arithmetic() {
+    systest!("(+)" => "0");
+    systest!("(+ 2)" => "2");
+    systest!("(+ 2 3 4)" => "9");
+    systest!("(*)" => "1");
+    systest!("(* 2)" => "2");
+    systest!("(* 3 5 2)" => "30");
+    systest!("(-)" => Error);
+    systest!("(- 2)" => "-2");
+    systest!("(- 5 3)" => "2");
+    systest!("(- 5 3 1)" => "1");
+    systest!("(=)" => "#t");
+    systest!("(= 2)" => "#t");
+    systest!("(= 2 2)" => "#t");
+    systest!("(= 2 2 2 2)" => "#t");
+    systest!("(= 2 2 3 2)" => "#f");
+}
+
+#[test]
+fn test_car_cdr_cons() {
+    systest!("(car)" => Error);
+    systest!("(car '(1 . 2))" => "1");
+    systest!("(car '(1 2))" => "1");
+    systest!("(car '(1 2) '(3 4))" => Error);
+    systest!("(cdr)" => Error);
+    systest!("(cdr '(1 . 2))" => "2");
+    systest!("(cdr '(1 2))" => "(2)");
+    systest!("(cdr '(1 2) '(3 4))" => Error);
+    systest!("(cons)" => Error);
+    systest!("(cons 1)" => Error);
+    systest!("(cons 1 2)" => "(1 . 2)");
+    systest!("(cons 1 '(2 3 4))" => "(1 2 3 4)");
+    systest!("(cons '(1 2) '(3 4))" => "((1 2) 3 4)");
+    systest!("(cons 1 2 3)" => Error);
+    systest!("(car (cons 1 2))" => "1");
+    systest!("(cdr (cons 1 2))" => "2");
+}
+
+#[test]
+fn test_symbol_string() {
+    systest!("(symbol->string 'flying-fish)" => "\"flying-fish\"");
+    systest!("(symbol->string 'Martin)" => "\"martin\"");
+    systest!("(symbol->string (string->symbol \"Malvina\"))" => "\"Malvina\"");
+    systest!("(string->symbol \"mISSISSIppi\")" => "mISSISSIppi");
+}
+
+#[test]
+fn test_predicates() {
+	systest!("(symbol? 'foo)" => "#t");
+	systest!("(symbol? (car '(a b)))" => "#t");
+	systest!("(symbol? \"bar\")" => "#f");
+	systest!("(symbol? 'nil)" => "#t");
+	systest!("(symbol? '())" => "#f");
+	systest!("(symbol? #f)" => "#f");
+}
+
+#[test]
+fn test_list() {
+    systest!("(list)" => "()");
+    systest!("(list 1)" => "(1)");
+    systest!("(list 1 2 3)" => "(1 2 3)");
+    systest!("(list 'a (+ 3 4) 'c)" => "(a 7 c)");
+}
+
+#[test]
+fn test_length() {
+    systest!("(length)" => Error);
+    systest!("(length '(1) '(2))" => Error);
+    systest!("(length '(a b c))" => "3");
+    systest!("(length '(a (b) (c d e)))" => "3");
+    systest!("(length '())" => "0");
 }
