@@ -1,6 +1,6 @@
-#[macro_use]
-mod error;
-#[macro_use]
+#[macro_use] extern crate mopa;
+#[macro_use] mod error;
+#[macro_use] mod macros;
 mod datum;
 mod environment;
 mod lexer;

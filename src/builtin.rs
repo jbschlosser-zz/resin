@@ -756,6 +756,8 @@ fn native_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
             Ok(Datum::Boolean(n1 == n2)),
         (&Datum::Character(ref c1), &Datum::Character(ref c2)) =>
             Ok(Datum::Boolean(c1 == c2)),
+        (&Datum::Ext(ref e1), &Datum::Ext(ref e2)) =>
+            Ok(Datum::Boolean(e1 == e2)),
         (&Datum::EmptyList, &Datum::EmptyList) => Ok(Datum::Boolean(true)),
         (&Datum::Procedure(ref p1), &Datum::Procedure(ref p2)) => {
             match (p1, p2) {

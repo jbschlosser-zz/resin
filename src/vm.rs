@@ -107,7 +107,7 @@ impl VirtualMachine {
                     d @ Datum::String(_) | d @ Datum::Character(_) |
                     d @ Datum::Number(_) | d @ Datum::Boolean(_) |
                     d @ Datum::Procedure(_) | d @ Datum::Vector(_) |
-                    d @ Datum::SyntaxRule(..) => {
+                    d @ Datum::SyntaxRule(..) | d @ Datum::Ext(_) => {
                         self.val_stack.push(d);
                     },
                     Datum::Pair(car, cdr) => {

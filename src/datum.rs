@@ -1,20 +1,11 @@
 use environment::Environment;
 use error::RuntimeError;
+use std::any::Any;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
+use super::mopa;
 use vm::Instruction;
-
-#[macro_export]
-macro_rules! list {
-    () => {{ Datum::EmptyList }};
-
-    ($datum:expr) => ( Datum::pair($datum, Datum::EmptyList) );
-
-    ($first:expr, $($rest:expr),+) => {{
-        Datum::pair($first, list!($($rest),+))
-    }};
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Datum {
@@ -27,56 +18,8 @@ pub enum Datum {
     Procedure(Procedure),
     SyntaxRule(Procedure, String),
     Pair(Box<Datum>, Box<Datum>),
+    Ext(Ext),
     EmptyList
-}
-
-impl fmt::Display for Datum {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Datum::Symbol(ref s) => write!(f, "{}", &s),
-            &Datum::String(ref s) => write!(f, "\"{}\"", &s),
-            &Datum::Character(ref c) => write!(f, "\\#{}", c),
-            &Datum::Number(ref n) => write!(f, "{}", n),
-            &Datum::Boolean(ref b) => write!(f, "#{}", if *b {'t'} else {'f'}),
-            &Datum::Vector(ref v) => {
-                use std::ops::Deref;
-                try!(write!(f, "#("));
-                let borrowed = v.borrow();
-                let vec = borrowed.deref();
-                for (index, d) in vec.iter().enumerate() {
-                    try!(d.fmt(f));
-                    if index < vec.len() - 1 {
-                        try!(write!(f, " "));
-                    }
-                }
-                write!(f, ")")
-            },
-            &Datum::Procedure(_) => write!(f, "#<procedure>"),
-            &Datum::SyntaxRule(_, ref name) =>
-                write!(f, "#<syntax-rule:{}>", name),
-            &Datum::Pair(ref car, ref cdr) => {
-                let car_str = format!("{}", car);
-                let cdr_str = format!("{}", cdr);
-
-                try!(write!(f, "("));
-                if cdr_str.chars().next() == Some('(') {
-                    // If the cdr is a list, leave out the . and parentheses.
-                    try!(write!(f, "{}", &car_str));
-                    match **cdr {
-                        Datum::EmptyList => (),
-                        _ => try!(write!(f, " "))
-                    }
-                    try!(write!(f, "{}", &cdr_str[1..cdr_str.len() - 1]));
-                } else {
-                    try!(write!(f, "{}", &car_str));
-                    try!(write!(f, " . "));
-                    try!(write!(f, "{}", &cdr_str));
-                }
-                write!(f, ")")
-            },
-            &Datum::EmptyList => write!(f, "()"),
-        }
-    }
 }
 
 impl Datum {
@@ -109,6 +52,9 @@ impl Datum {
             body_data: body_data,
             saved_env: saved_env
         })))
+    }
+    pub fn ext<E: AnyClone + Eq>(e: E, tag: &str) -> Datum {
+        Datum::Ext(Ext::new(e, tag.to_string()))
     }
     pub fn list(elements: Vec<Datum>) -> Datum {
         let mut list = Datum::EmptyList;
@@ -164,6 +110,56 @@ impl Datum {
         let (vec_form, proper) = self.as_vec();
         if !proper { runtime_error!("Expected proper list") }
         Ok(vec_form)
+    }
+}
+
+impl fmt::Display for Datum {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Datum::Symbol(ref s) => write!(f, "{}", &s),
+            &Datum::String(ref s) => write!(f, "\"{}\"", &s),
+            &Datum::Character(ref c) => write!(f, "\\#{}", c),
+            &Datum::Number(ref n) => write!(f, "{}", n),
+            &Datum::Boolean(ref b) => write!(f, "#{}", if *b {'t'} else {'f'}),
+            &Datum::Vector(ref v) => {
+                use std::ops::Deref;
+                try!(write!(f, "#("));
+                let borrowed = v.borrow();
+                let vec = borrowed.deref();
+                for (index, d) in vec.iter().enumerate() {
+                    try!(d.fmt(f));
+                    if index < vec.len() - 1 {
+                        try!(write!(f, " "));
+                    }
+                }
+                write!(f, ")")
+            },
+            &Datum::Procedure(_) => write!(f, "#<procedure>"),
+            &Datum::SyntaxRule(_, ref name) =>
+                write!(f, "#<syntax-rule:{}>", name),
+            &Datum::Pair(ref car, ref cdr) => {
+                let car_str = format!("{}", car);
+                let cdr_str = format!("{}", cdr);
+
+                try!(write!(f, "("));
+                if cdr_str.chars().next() == Some('(') {
+                    // If the cdr is a list, leave out the . and parentheses.
+                    try!(write!(f, "{}", &car_str));
+                    match **cdr {
+                        Datum::EmptyList => (),
+                        _ => try!(write!(f, " "))
+                    }
+                    try!(write!(f, "{}", &cdr_str[1..cdr_str.len() - 1]));
+                } else {
+                    try!(write!(f, "{}", &car_str));
+                    try!(write!(f, " . "));
+                    try!(write!(f, "{}", &cdr_str));
+                }
+                write!(f, ")")
+            },
+            &Datum::Ext(ref e) => write!(f, "#<ext:{}>", &e.tag),
+            &Datum::EmptyList => write!(f, "()"),
+        }
     }
 }
 
@@ -247,6 +243,66 @@ impl PartialEq for Procedure {
 
 impl Eq for Procedure {}
 
+// Used to store trait objects that are cloneable and can be
+// downcast later on.
+pub trait AnyClone: mopa::Any {
+    fn any_clone(&self) -> Box<AnyClone>;
+}
+
+mopafy!(AnyClone);
+
+impl<T> AnyClone for T where T: 'static + Any + Clone {
+    fn any_clone(&self) -> Box<AnyClone> {
+        Box::new(self.clone())
+    }
+}
+
+// The extension type.
+pub struct Ext {
+    pub data: Box<AnyClone>,
+    tag: String,
+    comparer: Rc<Box<Fn(&Box<AnyClone>, &Box<AnyClone>) -> bool>>
+}
+
+impl Ext {
+    pub fn new<E: AnyClone + Eq>(e: E, tag: String) -> Self {
+        Ext {
+            data: Box::new(e),
+            tag: tag,
+            comparer: Rc::new(Box::new(|a: &Box<AnyClone>, b: &Box<AnyClone>| {
+                match (a.downcast_ref::<E>(), b.downcast_ref::<E>()) {
+                    (Some(a_real), Some(b_real)) => a_real == b_real,
+                    _ => false
+                }
+            }))
+        }
+    }
+}
+
+impl fmt::Debug for Ext {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#<ext:{}>", &self.tag)
+    }
+}
+
+impl PartialEq for Ext {
+    fn eq(&self, other: &Ext) -> bool {
+        (*self.comparer)(&self.data, &other.data)
+    }
+}
+
+impl Eq for Ext {}
+
+impl Clone for Ext {
+    fn clone(&self) -> Ext {
+        Ext {
+            data: self.data.any_clone(),
+            tag: self.tag.clone(),
+            comparer: self.comparer.clone()
+        }
+    }
+}
+
 #[test]
 fn test_reverse() {
     assert_eq!(list!(Datum::Number(1), Datum::Number(2), Datum::Number(3))
@@ -256,16 +312,3 @@ fn test_reverse() {
     assert_eq!(Datum::Number(1).reverse(), Datum::Number(1));
     assert_eq!(list!(Datum::Number(1)).reverse(), list!(Datum::Number(1)));
 }
-
-/*#[test]
-fn is_proper_list_success() {
-    let list = list![Datum::Number(5), Datum::Number(6), Datum::Number(7)];
-    assert!(list.is_proper_list());
-}
-
-#[test]
-fn is_proper_list_failure() {
-    let list = Datum::pair(Datum::Number(5),
-        Datum::pair(Datum::Number(6), Datum::Number(7)));
-    assert!(!list.is_proper_list());
-}*/
