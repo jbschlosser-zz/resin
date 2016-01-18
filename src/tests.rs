@@ -176,4 +176,13 @@ fn test_apply() {
     systest!("(apply + 4 '(1 2 3))" => "10");
     systest!("(apply + 4 5 6 '(1 2 3))" => "21");
     systest!("(apply + '(4 5 6) '(1 2 3))" => Error);
+    systest!("(apply + '((+ 1 1) 2 3))" => Error);
+}
+
+#[test]
+fn test_map() {
+    systest!("(map)" => Error);
+    systest!("(map +)" => Error);
+    systest!("(map (lambda (x) (* x x)) '(1 2 3 4))" => "(1 4 9 16)");
+    systest!("(map + '(1 2 3 4) '(2 3 4 5))" => "(3 5 7 9)");
 }
