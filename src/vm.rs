@@ -170,15 +170,21 @@ impl VirtualMachine {
                             native.clone(), args.len()));
                         instructions
                     },
-                    Procedure::Scheme(ref s) =>/*SchemeProcedure {
-                        ref arg_names, ref body_data, ref saved_env }) =>*/
-                    {
+                    Procedure::Scheme(ref s) => {
                         let ref arg_names = s.arg_names;
+                        let ref rest_name = s.rest_name;
                         let ref body_data = s.body_data;
                         let ref saved_env = s.saved_env;
-                        if arg_names.len() != args.len() {
-                            runtime_error!("Expected {} argument(s) to function",
-                                arg_names.len());
+                        if let &Some(_) = rest_name {
+                            if args.len() < arg_names.len() {
+                                runtime_error!("Expected at least {} argument(s) to function",
+                                    arg_names.len());
+                            }
+                        } else {
+                            if args.len() != arg_names.len() {
+                                runtime_error!("Expected {} argument(s) to function",
+                                    arg_names.len());
+                            }
                         }
 
                         // Set up the procedure's environment- start with the
@@ -195,6 +201,19 @@ impl VirtualMachine {
                                 Instruction::Evaluate(env.clone(), false));
                             body_instructions.push(Instruction::Define(
                                 proc_env.clone(), name.clone(), false));
+                        }
+
+                        // Wrap the rest of the args up into a list.
+                        if let &Some(ref rn) = rest_name {
+                            let rest: Vec<_> = args.iter()
+                                .skip(arg_names.len())
+                                .map(|d| d.clone())
+                                .collect();
+                            let rest_datum = Datum::list(rest);
+                            body_instructions.push(
+                                Instruction::PushValue(rest_datum));
+                            body_instructions.push(Instruction::Define(
+                                proc_env.clone(), rn.clone(), false));
                         }
 
                         // Evaluate the procedure body in the new environment.

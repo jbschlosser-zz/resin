@@ -45,11 +45,15 @@ impl Datum {
         Datum::Procedure(Procedure::Native(Rc::new(NativeProcedure(
             Box::new(t)))))
     }
-    pub fn scheme(arg_names: Vec<String>, body_data: Vec<Datum>,
+    pub fn scheme(
+        arg_names: Vec<String>,
+        rest_name: Option<String>,
+        body_data: Vec<Datum>,
         saved_env: Rc<RefCell<Environment>>) -> Datum
     {
         Datum::Procedure(Procedure::Scheme(Rc::new(SchemeProcedure {
             arg_names: arg_names,
+            rest_name: rest_name,
             body_data: body_data,
             saved_env: saved_env
         })))
@@ -198,6 +202,7 @@ pub struct NativeProcedure(Box<Fn(&[Datum]) ->
     Result<Datum, RuntimeError>>);
 pub struct SchemeProcedure {
     pub arg_names: Vec<String>,
+    pub rest_name: Option<String>,
     pub body_data: Vec<Datum>,
     pub saved_env: Rc<RefCell<Environment>>
 }

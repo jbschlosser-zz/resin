@@ -142,13 +142,30 @@ fn special_form_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args >= 2);
-    // TODO: Handle additional formal possibilities (e.g. ellipses).
-    let mut arg_names = Vec::new();
-    for formal in try!(args[0].to_vec()) {
-        arg_names.push(try_unwrap_arg!(formal => Symbol).clone());
-    }
+    let (arg_names, rest_name) = match args[0] {
+        Datum::Symbol(ref s) => (Vec::new(), Some(s.clone())),
+        ref d @ Datum::Pair(..) => {
+            let (formals, is_proper) = d.as_vec();
+            let mut arg_names = Vec::new();
+            for formal in formals {
+                arg_names.push(match formal {
+                    Datum::Symbol(s) => s,
+                    _ => runtime_error!("Expected list or symbol list for formals")
+                });
+            }
+            if is_proper {
+                (arg_names, None)
+            } else {
+                let loc = arg_names.len() - 1;
+                let rest_name = arg_names.split_off(loc);
+                (arg_names, Some(rest_name.first().unwrap().clone()))
+            }
+        },
+        Datum::EmptyList => (Vec::new(), None),
+        _ => runtime_error!("Expected symbol or symbol list for formals")
+    };
     let body = Vec::from(&args[1..]);
-    let lambda = Datum::scheme(arg_names, body, env.clone());
+    let lambda = Datum::scheme(arg_names, rest_name, body, env.clone());
     Ok(vec![Instruction::PushValue(lambda)])
 }
 

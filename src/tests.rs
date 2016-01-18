@@ -135,3 +135,16 @@ fn test_length() {
     systest!("(length '(a (b) (c d e)))" => "3");
     systest!("(length '())" => "0");
 }
+
+#[test]
+fn test_lambda() {
+    systest!("(lambda)" => Error);
+    systest!("((lambda ()))" => Error);
+    systest!("((lambda () 1 2 3 4))" => "4");
+    systest!("((lambda (x) x) 5)" => "5");
+    systest!("((lambda (x y) (+ x y)) 4 5)" => "9");
+    systest!("((lambda x x) 1 2 3 4 5)" => "(1 2 3 4 5)");
+    systest!("((lambda (x . y) x) 1 2 3 4 5)" => "1");
+    systest!("((lambda (x . y) y) 1 2 3 4 5)" => "(2 3 4 5)");
+    systest!("((lambda (a b c . d) d) 1 2 3 4 5)" => "(4 5)");
+}
