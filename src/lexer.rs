@@ -91,7 +91,24 @@ impl<I: Iterator<Item=char>> Lexer<I> {
                     Some('(') => Ok(Some(Token::OpenVectorParen)),
                     Some('\\') => {
                         match self.next_char() {
-                            Some(c) => Ok(Some(Token::Character(c))),
+                            Some(c) => {
+                                if is_a_z(c) {
+                                    // An alphabetic char could indicate
+                                    // a spelled out character name.
+                                    let mut char_name = String::new();
+                                    char_name.push(c);
+                                    char_name.push_str(
+                                        &self.read_while(|c| is_a_z(c)));
+                                    match get_char_for_name(&char_name) {
+                                        Some(c) => Ok(Some(Token::Character(c))),
+                                        None => syntax_error!(self,
+                                            "Unsupported character constant: {}",
+                                            &char_name)
+                                    }
+                                } else {
+                                    Ok(Some(Token::Character(c)))
+                                }
+                            },
                             None => syntax_error!(self,
                                 "Expected character after #\\")
                         }
@@ -252,6 +269,25 @@ fn is_extended_alphabetic(ch: char) -> bool {
             true
         },
         _ => false
+    }
+}
+
+fn get_char_for_name(name: &str) -> Option<char> {
+    assert!(name.len() >= 1); // Should hold based on how lexing is done.
+
+    if name.len() == 1 {
+        Some(name.chars().next().unwrap())
+    } else {
+        // TODO: Support more.
+        let ch = match name {
+            "space" => ' ',
+            "newline" => '\n',
+            "nl" => '\n',
+            "tab" => '\t',
+            "return" => '\r',
+            _ => return None
+        };
+        Some(ch)
     }
 }
 
@@ -432,12 +468,13 @@ fn lex_quotes() {
 
 #[test]
 fn lex_characters() {
-    let s = String::from("(#\\a #\\2 #\\# #\\) #\\')");
+    let s = String::from("(#\\a #\\2 #\\# #\\) #\\' #\\space #\\nl #\\tab)");
     let mut lexer = Lexer::new(s.chars());
     let tokens = lexer.lex_all();
     assert!(tokens.ok().unwrap() == vec![
         Token::OpenParen, Token::Character('a'), Token::Character('2'),
         Token::Character('#'), Token::Character(')'), Token::Character('\''),
+        Token::Character(' '), Token::Character('\n'), Token::Character('\t'),
         Token::CloseParen
     ]);
 }
