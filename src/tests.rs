@@ -140,6 +140,7 @@ fn test_length() {
 fn test_lambda() {
     systest!("(lambda)" => Error);
     systest!("((lambda ()))" => Error);
+    systest!("((lambda (x . y) y) 1)" => "()");
     systest!("((lambda () 1 2 3 4))" => "4");
     systest!("((lambda (x) x) 5)" => "5");
     systest!("((lambda (x y) (+ x y)) 4 5)" => "9");
@@ -147,4 +148,18 @@ fn test_lambda() {
     systest!("((lambda (x . y) x) 1 2 3 4 5)" => "1");
     systest!("((lambda (x . y) y) 1 2 3 4 5)" => "(2 3 4 5)");
     systest!("((lambda (a b c . d) d) 1 2 3 4 5)" => "(4 5)");
+}
+
+#[test]
+fn test_append() {
+    systest!("(append)" => "()");
+    systest!("(append '())" => "()");
+    systest!("(append '(1 2))" => "(1 2)");
+    systest!("(append '(1 2) '(3 4))" => "(1 2 3 4)");
+    systest!("(append '(a b) '(c . d))" => "(a b c . d)");
+    systest!("(append '(x) '(y))" => "(x y)");
+    systest!("(append '(a) '(b c d))" => "(a b c d)");
+    systest!("(append '(a (b)) '((c)))" => "(a (b) (c))");
+    systest!("(append '() 'a)" => "a");
+    systest!("(append '() 5)" => "5");
 }

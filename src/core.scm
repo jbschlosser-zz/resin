@@ -83,3 +83,12 @@
 	 x)
 	((do "step" x y)
 	 y)))
+
+(define apply
+  (lambda (func first . rest)
+	(if (null? rest)
+		(eval (cons func first))
+		(let loop ((a (cons func (list first))) (b rest))
+		  (if (= 1 (length b))
+			  (eval (append a (car b)))
+			  (loop (append a (list (car b))) (cdr b)))))))

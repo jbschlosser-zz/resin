@@ -23,6 +23,8 @@ pub enum Instruction {
     // Pops the top value of val_stack and checks if it is #f - skips the
     // program counter forward the specified amount if it is
     JumpIfFalse(usize),
+    // Pushes the stack frame onto the call stack.
+    PushStackFrame(StackFrame),
     // Pushes the Datum to the top of the val_stack.
     PushValue(Datum),
     // Pops and discards the top value of the val_stack.
@@ -31,7 +33,7 @@ pub enum Instruction {
     Return
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StackFrame {
     instructions: Vec<Instruction>,
     pc: usize,
@@ -205,13 +207,25 @@ impl VirtualMachine {
 
                         // Wrap the rest of the args up into a list.
                         if let &Some(ref rn) = rest_name {
-                            let rest: Vec<_> = args.iter()
-                                .skip(arg_names.len())
-                                .map(|d| d.clone())
-                                .collect();
-                            let rest_datum = Datum::list(rest);
+                            for arg in args.iter().skip(arg_names.len()) {
+                                body_instructions.push(
+                                    Instruction::PushValue(arg.clone()));
+                            }
                             body_instructions.push(
-                                Instruction::PushValue(rest_datum));
+                                Instruction::PushValue(
+                                    Datum::native(|args: &[Datum]| {
+                                        let elements: Vec<_> = args.iter()
+                                            .map(|e| e.clone())
+                                            .collect();
+                                        Ok(Datum::list(elements))
+                                    })));
+                            body_instructions.push(Instruction::PushStackFrame(
+                                StackFrame::new(vec![
+                                    Instruction::CallProcedure(env.clone(),
+                                        args.len() - arg_names.len())
+                                ], list!(Datum::symbol("list"),
+                                Datum::Number((args.len() - arg_names.len()) as
+                                              i64)))));
                             body_instructions.push(Instruction::Define(
                                 proc_env.clone(), rn.clone(), false));
                         }
@@ -276,6 +290,7 @@ impl VirtualMachine {
                     _ => () //println!("Not jumping forward")
                 }
             },
+            Instruction::PushStackFrame(frame) => self.call_stack.push(frame),
             Instruction::PushValue(d) => {
                 //println!("Pushing top value: {}", d);
                 self.val_stack.push(d);

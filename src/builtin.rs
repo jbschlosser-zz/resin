@@ -24,6 +24,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("-", Datum::native(native_subtract)),
         ("*", Datum::native(native_multiply)),
         ("=", Datum::native(native_equals)),
+        ("append", Datum::native(native_append)),
         ("car", Datum::native(native_car)),
         ("cdr", Datum::native(native_cdr)),
         ("cons", Datum::native(native_cons)),
@@ -679,6 +680,19 @@ fn native_subtract(args: &[Datum]) -> Result<Datum, RuntimeError> {
     // Handle unary case.
     if args.len() == 1 { Ok(Datum::Number(-difference)) }
     else { Ok(Datum::Number(difference)) }
+}
+
+fn native_append(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() == 0 { return Ok(Datum::EmptyList); }
+    let mut result = vec![];
+    let last_loc = args.len() - 1;
+    let last_arg = args[last_loc].clone();
+    for arg in &args[0..args.len() - 1] {
+        let v = try!(arg.to_vec());
+        result.extend(v);
+    }
+    result.push(last_arg);
+    Ok(Datum::improper_list(result))
 }
 
 fn native_car(args: &[Datum]) -> Result<Datum, RuntimeError> {

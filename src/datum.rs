@@ -68,6 +68,15 @@ impl Datum {
         }
         list
     }
+    pub fn improper_list(elements: Vec<Datum>) -> Datum {
+        if elements.len() == 0 { return Datum::EmptyList; }
+        let last_loc = elements.len() - 1;
+        let mut list = elements[last_loc].clone();
+        for element in elements.into_iter().rev().skip(1) {
+            list = Datum::Pair(Box::new(element), Box::new(list));
+        }
+        list
+    }
     pub fn reverse(&self) -> Datum {
         // Reverse the list.
         let mut reversed = match self {
