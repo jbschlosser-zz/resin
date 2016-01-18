@@ -65,10 +65,13 @@ impl Interpreter {
 
         match res {
             Ok(d) => Ok(d),
-            Err(e) => return Err(e.msg)
+            Err((e, trace)) => return Err(format!("{}\n\nStack trace:\n{}",
+                                                  e.msg, trace))
         }
     }
-    pub fn evaluate_datum(&self, datum: &Datum) -> Result<Datum, RuntimeError> {
+    pub fn evaluate_datum(&self, datum: &Datum) ->
+        Result<Datum, (RuntimeError, String)>
+    {
         let mut vm = VirtualMachine::new();
         vm.run(self.root.clone(), datum)
     }

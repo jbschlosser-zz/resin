@@ -55,7 +55,7 @@ impl VirtualMachine {
         VirtualMachine {call_stack: Vec::new(), val_stack: Vec::new()}
     }
     pub fn run(&mut self, env: Rc<RefCell<Environment>>, datum: &Datum) ->
-        Result<Datum, RuntimeError>
+        Result<Datum, (RuntimeError, String)>
     {
         let initial_frame = StackFrame::new(vec![
             Instruction::PushValue(datum.clone()),
@@ -72,8 +72,7 @@ impl VirtualMachine {
                         .enumerate()
                         .map(|(i, frame)| format!("[{}] Evaluating {}", i, frame.expr))
                         .collect();
-                    println!("Stack trace:\n{}\n", trace_elems.join("\n"));
-                    return Err(e);
+                    return Err((e, trace_elems.join("\n")));
                 }
             }
         }
