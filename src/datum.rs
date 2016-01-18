@@ -3,6 +3,7 @@ use error::RuntimeError;
 use std::any::Any;
 use std::cell::RefCell;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use super::mopa;
 use vm::Instruction;
@@ -159,6 +160,28 @@ impl fmt::Display for Datum {
             },
             &Datum::Ext(ref e) => write!(f, "#<ext:{}>", &e.tag),
             &Datum::EmptyList => write!(f, "()"),
+        }
+    }
+}
+
+impl Hash for Datum {
+    fn hash<H>(&self, state: &mut H) where H: Hasher {
+        match self {
+            &Datum::Symbol(ref v) => v.hash(state),
+            &Datum::String(ref v) => v.hash(state),
+            &Datum::Character(ref v) => v.hash(state),
+            &Datum::Number(ref v) => v.hash(state),
+            &Datum::Boolean(ref v) => v.hash(state),
+            &Datum::Vector(ref v) => v.borrow().hash(state),
+            &Datum::Procedure(_) => unimplemented!(),
+            &Datum::SyntaxRule(..) => unimplemented!(),
+            &Datum::Pair(ref car, ref cdr) => {
+                car.hash(state);
+                cdr.hash(state);
+            },
+            // TODO: Implement this.
+            &Datum::Ext(..) => unimplemented!(),
+            &Datum::EmptyList => 0xDEAD.hash(state) // arbitrary
         }
     }
 }

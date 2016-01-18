@@ -30,8 +30,11 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("eq?", Datum::native(native_eqv_p)), // same as eqv?
         ("equal?", Datum::native(native_equal_p)),
         ("eqv?", Datum::native(native_eqv_p)),
+        ("hash-ref", Datum::native(native_hash_ref)),
+        ("hash-set!", Datum::native(native_hash_set)),
         ("length", Datum::native(native_length)),
         ("list", Datum::native(native_list)),
+        ("make-hash-table", Datum::native(native_make_hash_table)),
         ("null?", Datum::native(native_null_p)),
         ("string=?", Datum::native(native_string_equal_p)),
         ("string->symbol", Datum::native(native_string_to_symbol)),
@@ -812,6 +815,42 @@ fn native_eqv_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     }
 }
 
+fn native_hash_ref(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 2);
+    let h = try_unwrap_arg!(args[0] =>
+                            Rc<RefCell<HashMap<Datum, Datum>>>);
+
+    // Make sure the key can be hashed.
+    match args[1] {
+        // TODO: Support Ext for hashing.
+        Datum::Procedure(_) | Datum::SyntaxRule(..) | Datum::Ext(..) =>
+            return Ok(Datum::Boolean(false)),
+        _ => ()
+    }
+
+    match h.borrow().get(&args[1]) {
+        Some(d) => Ok(d.clone()),
+        None => Ok(Datum::Boolean(false))
+    }
+}
+
+fn native_hash_set(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 3);
+    let h = try_unwrap_arg!(args[0] =>
+                            Rc<RefCell<HashMap<Datum, Datum>>>);
+
+    // Make sure the key can be hashed.
+    match args[1] {
+        // TODO: Support Ext for hashing.
+        Datum::Procedure(_) | Datum::SyntaxRule(..) | Datum::Ext(..) =>
+            runtime_error!("Hashing not supported for {}", args[1]),
+        _ => ()
+    }
+
+    h.borrow_mut().insert(args[1].clone(), args[2].clone());
+    Ok(args[2].clone())
+}
+
 fn native_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     Ok(Datum::Number(try!(args[0].to_vec()).len() as i64))
@@ -820,6 +859,12 @@ fn native_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
 fn native_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let elements: Vec<_> = args.iter().map(|e| e.clone()).collect();
     Ok(Datum::list(elements))
+}
+
+fn native_make_hash_table(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 0);
+    Ok(Datum::ext(Rc::new(RefCell::new(
+        HashMap::<Datum, Datum>::new())), "hash-table"))
 }
 
 fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
