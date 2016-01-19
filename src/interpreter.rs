@@ -58,16 +58,15 @@ impl Interpreter {
         if data.len() == 0 {return Err("".to_string());}
 
         // Evaluate.
-        let mut res = Ok(Datum::EmptyList);
+        let mut res = Datum::EmptyList;
         for datum in data {
-            res = self.evaluate_datum(&datum);
+            res = match self.evaluate_datum(&datum) {
+                Ok(d) => d,
+                Err((e, trace)) =>
+                    return Err(format!("{}\n\nStack trace:\n{}", e.msg, trace))
+            }
         }
-
-        match res {
-            Ok(d) => Ok(d),
-            Err((e, trace)) => return Err(format!("{}\n\nStack trace:\n{}",
-                                                  e.msg, trace))
-        }
+        Ok(res)
     }
     pub fn evaluate_datum(&self, datum: &Datum) ->
         Result<Datum, (RuntimeError, String)>
