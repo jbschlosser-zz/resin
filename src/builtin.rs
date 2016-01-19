@@ -35,10 +35,16 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("hash-set!", Datum::native(native_hash_set)),
         ("length", Datum::native(native_length)),
         ("list", Datum::native(native_list)),
+        ("list->string", Datum::native(native_list_to_string)),
         ("make-hash-table", Datum::native(native_make_hash_table)),
         ("null?", Datum::native(native_null_p)),
         ("string=?", Datum::native(native_string_equal_p)),
+        ("string-contains", Datum::native(native_string_contains)),
         ("string-length", Datum::native(native_string_length)),
+        ("string-prefix?", Datum::native(native_string_prefix_p)),
+        ("string-split", Datum::native(native_string_split)),
+        ("string->list", Datum::native(native_string_to_list)),
+        ("string->number", Datum::native(native_string_to_number)),
         ("string->symbol", Datum::native(native_string_to_symbol)),
         ("substring", Datum::native(native_substring)),
         ("symbol->string", Datum::native(native_symbol_to_string)),
@@ -920,6 +926,17 @@ fn native_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
     Ok(Datum::list(elements))
 }
 
+fn native_list_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 1);
+    let list = try!(args[0].to_vec());
+    let mut string = String::new();
+    for d in list {
+        let ch = try_unwrap_arg!(d => char);
+        string.push(ch);
+    }
+    Ok(Datum::String(string))
+}
+
 fn native_make_hash_table(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 0);
     Ok(Datum::ext(Rc::new(RefCell::new(
@@ -931,6 +948,16 @@ fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     match args[0] {
         Datum::EmptyList => Ok(Datum::Boolean(true)),
         _ => Ok(Datum::Boolean(false))
+    }
+}
+
+fn native_string_contains(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 2);
+    let s1 = try_unwrap_arg!(args[0] => String).clone();
+    let s2 = try_unwrap_arg!(args[1] => String).clone();
+    match s1.find(&s2) {
+        Some(i) => Ok(Datum::Number(i as i64)),
+        None => Ok(Datum::Boolean(false))
     }
 }
 
@@ -947,6 +974,41 @@ fn native_string_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String);
     Ok(Datum::Number(s.len() as i64))
+}
+
+fn native_string_prefix_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 2);
+    let s1 = try_unwrap_arg!(args[0] => String).clone();
+    let s2 = try_unwrap_arg!(args[1] => String).clone();
+    Ok(Datum::Boolean(s2.starts_with(&s1)))
+}
+
+fn native_string_split(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 2);
+    let string = try_unwrap_arg!(args[0] => String).clone();
+    let ch = try_unwrap_arg!(args[1] => char);
+    let splits: Vec<_> = string.split(ch)
+        .collect();
+    let results = splits.into_iter()
+        .map(|s| Datum::String(s.to_string()))
+        .collect();
+    Ok(Datum::list(results))
+}
+
+fn native_string_to_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 1);
+    let s = try_unwrap_arg!(args[0] => String).clone();
+    let list: Vec<_> = s.chars().map(|c| Datum::Character(c)).collect();
+    Ok(Datum::list(list))
+}
+
+fn native_string_to_number(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 1);
+    let s = try_unwrap_arg!(args[0] => String).clone();
+    match s.parse::<i64>() {
+        Ok(n) => Ok(Datum::Number(n)),
+        Err(_) => runtime_error!("Cannot convert {} to a number", &s)
+    }
 }
 
 fn native_string_to_symbol(args: &[Datum]) -> Result<Datum, RuntimeError> {
