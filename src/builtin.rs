@@ -74,16 +74,42 @@ fn special_form_begin(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
 fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
-    expect_args!(args == 2);
-    let name = try_unwrap_arg!(args[0] => Symbol).clone();
-    let instructions = vec![
-        Instruction::PushValue(args[1].clone()),
-        Instruction::Evaluate(env.clone(), false),
-        Instruction::Define(env.clone(), name, false),
-        // Return value is unspecified in the spec.
-        Instruction::PushValue(Datum::EmptyList)
-    ];
-    Ok(instructions)
+    expect_args!(args >= 2);
+    let usage_str =
+        format!("Usage: (define variable value) OR (define (proc formals) body ...)");
+    match args[0] {
+        Datum::Symbol(ref name) => {
+            expect_args!(args == 2);
+            let instructions = vec![
+                Instruction::PushValue(args[1].clone()),
+                Instruction::Evaluate(env.clone(), false),
+                Instruction::Define(env.clone(), name.clone(), false),
+                // Return value is unspecified in the spec.
+                Instruction::PushValue(Datum::EmptyList)
+            ];
+            Ok(instructions)
+        },
+        Datum::Pair(ref car, ref cdr) => {
+            match **car {
+                Datum::Symbol(ref name) => {
+                    let formals = *cdr.clone();
+                    let body: Vec<_> =
+                        args[1..].iter().map(|d| d.clone()).collect();
+                    let mut lambda_args = vec![formals];
+                    lambda_args.extend(body);
+                    let mut instructions = try!(
+                        special_form_lambda(env.clone(), &lambda_args));
+                    instructions.push(
+                        Instruction::Define(env.clone(), name.clone(), false));
+                    instructions.push(
+                        Instruction::PushValue(Datum::EmptyList));
+                    Ok(instructions)
+                },
+                _ => runtime_error!("{}", &usage_str)
+            }
+        },
+        _ => runtime_error!("{}", &usage_str)
+    }
 }
 
 fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
