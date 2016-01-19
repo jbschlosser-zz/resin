@@ -38,7 +38,9 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("make-hash-table", Datum::native(native_make_hash_table)),
         ("null?", Datum::native(native_null_p)),
         ("string=?", Datum::native(native_string_equal_p)),
+        ("string-length", Datum::native(native_string_length)),
         ("string->symbol", Datum::native(native_string_to_symbol)),
+        ("substring", Datum::native(native_substring)),
         ("symbol->string", Datum::native(native_symbol_to_string)),
 
         ("boolean?", Datum::native(native_boolean_p)),
@@ -941,10 +943,32 @@ fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     }
 }
 
+fn native_string_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 1);
+    let s = try_unwrap_arg!(args[0] => String);
+    Ok(Datum::Number(s.len() as i64))
+}
+
 fn native_string_to_symbol(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String).clone();
     Ok(Datum::Symbol(s))
+}
+
+fn native_substring(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    if args.len() != 2 && args.len() != 3 {
+        runtime_error!("Usage: (substring str start [end])");
+    }
+    let string = try_unwrap_arg!(args[0] => String);
+    let start = try_unwrap_arg!(args[1] => i64) as usize;
+    let end = if args.len() == 3 { try_unwrap_arg!(args[2] => i64) as usize }
+        else { string.len() };
+    // TODO: Fix i64 <-> usize conversion.
+    if end > string.len() || start > string.len() || start > end {
+        runtime_error!("Cannot index string from {} to {}", start, end);
+    }
+
+    Ok(Datum::String((&string[start..end]).to_string()))
 }
 
 fn native_symbol_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
