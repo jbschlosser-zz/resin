@@ -17,9 +17,10 @@ pub enum Instruction {
     // val_stack.
     CallNative(Rc<NativeProcedure>, usize),
     // Defines the symbol corresponding with the String to the Datum at the
-    // top of the val_stack. The last flag indicates whether a syntax is
-    // being defined.
-    Define(Rc<RefCell<Environment>>, String, bool),
+    // top of the val_stack. The first flag indicates whether a syntax is
+    // being defined. The second flag indicates whether a set! should be done
+    // instead of a define.
+    Define(Rc<RefCell<Environment>>, String, DefineType),
     // Pops the top value of val_stack and checks if it is #f - skips the
     // program counter forward the specified amount if it is
     JumpIfFalse(usize),
@@ -31,6 +32,13 @@ pub enum Instruction {
     PopValue,
     // Returns to the previous stack frame by popping the current one.
     Return
+}
+
+#[derive(Debug, Clone)]
+pub enum DefineType {
+    Define,
+    DefineSyntax,
+    Set
 }
 
 #[derive(Debug, Clone)]
@@ -202,7 +210,7 @@ impl VirtualMachine {
                             body_instructions.push(
                                 Instruction::Evaluate(env.clone(), false));
                             body_instructions.push(Instruction::Define(
-                                proc_env.clone(), name.clone(), false));
+                                proc_env.clone(), name.clone(), DefineType::Define));
                         }
 
                         // Wrap the rest of the args up into a list.
@@ -227,7 +235,7 @@ impl VirtualMachine {
                                 Datum::Number((args.len() - arg_names.len()) as
                                               i64)))));
                             body_instructions.push(Instruction::Define(
-                                proc_env.clone(), rn.clone(), false));
+                                proc_env.clone(), rn.clone(), DefineType::Define));
                         }
 
                         // Evaluate the procedure body in the new environment.
@@ -261,20 +269,23 @@ impl VirtualMachine {
                 let result = try!(native.call(&args));
                 self.val_stack.push(result);
             },
-            Instruction::Define(env, name, is_syntax) => {
+            Instruction::Define(env, name, dtype) => {
                 //println!("Define value in environment");
-                if is_syntax {
-                    let datum = self.val_stack.pop().unwrap();
-                    match datum {
-                        Datum::Procedure(p) => {
-                            env.borrow_mut().define(&name,
-                                Datum::SyntaxRule(p, name.clone()));
+                match dtype {
+                    DefineType::Define => env.borrow_mut().define(&name,
+                        self.val_stack.pop().unwrap()),
+                    DefineType::DefineSyntax => {
+                        let datum = self.val_stack.pop().unwrap();
+                        match datum {
+                            Datum::Procedure(p) => {
+                                env.borrow_mut().define(&name,
+                                    Datum::SyntaxRule(p, name.clone()));
+                            }
+                            _ => runtime_error!("Expected procedure for syntax")
                         }
-                        _ => runtime_error!("Expected procedure for syntax")
-                    }
-                } else {
-                    env.borrow_mut().define(&name,
-                        self.val_stack.pop().unwrap());
+                    },
+                    DefineType::Set => try!(env.borrow_mut().set(&name,
+                        self.val_stack.pop().unwrap()))
                 }
             },
             Instruction::JumpIfFalse(n) => {

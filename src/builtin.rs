@@ -4,7 +4,7 @@ use error::RuntimeError;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use vm::Instruction;
+use vm::{Instruction, DefineType};
 
 pub fn get_builtins() -> Vec<(&'static str, Datum)>
 {
@@ -17,7 +17,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("lambda", Datum::special(special_form_lambda)),
         ("letrec", Datum::special(special_form_letrec)),
         ("quote", Datum::special(special_form_quote)),
-        ("set!", Datum::special(special_form_define)),
+        ("set!", Datum::special(special_form_set)),
         ("syntax-rules", Datum::special(special_form_syntax_rules)),
 
         ("+", Datum::native(native_add)),
@@ -93,7 +93,8 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
             let instructions = vec![
                 Instruction::PushValue(args[1].clone()),
                 Instruction::Evaluate(env.clone(), false),
-                Instruction::Define(env.clone(), name.clone(), false),
+                Instruction::Define(env.clone(), name.clone(),
+                    DefineType::Define),
                 // Return value is unspecified in the spec.
                 Instruction::PushValue(Datum::EmptyList)
             ];
@@ -110,7 +111,8 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
                     let mut instructions = try!(
                         special_form_lambda(env.clone(), &lambda_args));
                     instructions.push(
-                        Instruction::Define(env.clone(), name.clone(), false));
+                        Instruction::Define(env.clone(), name.clone(),
+                            DefineType::Define));
                     instructions.push(
                         Instruction::PushValue(Datum::EmptyList));
                     Ok(instructions)
@@ -130,7 +132,7 @@ fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     let instructions = vec![
         Instruction::PushValue(args[1].clone()),
         Instruction::Evaluate(env.clone(), false),
-        Instruction::Define(env.clone(), name, true),
+        Instruction::Define(env.clone(), name, DefineType::DefineSyntax),
         // Return value is unspecified in the spec.
         Instruction::PushValue(Datum::EmptyList)
     ];
@@ -231,7 +233,7 @@ fn special_form_letrec(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
         instructions.push(Instruction::PushValue(init));
         instructions.push(Instruction::Evaluate(let_env.clone(), false));
         instructions.push(
-            Instruction::Define(let_env.clone(), var_name, false));
+            Instruction::Define(let_env.clone(), var_name, DefineType::Define));
     }
 
     // Add the instructions for evaluating the body within the sub-environment.
@@ -252,6 +254,22 @@ fn special_form_quote(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     expect_args!(args == 1);
     Ok(vec![Instruction::PushValue(args[0].clone())])
 }
+
+fn special_form_set(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    Result<Vec<Instruction>, RuntimeError>
+{
+    expect_args!(args == 2);
+    let name = try_unwrap_arg!(args[0] => Symbol);
+    let instructions = vec![
+        Instruction::PushValue(args[1].clone()),
+        Instruction::Evaluate(env.clone(), false),
+        Instruction::Define(env.clone(), name.clone(), DefineType::Set),
+        // Return value is unspecified in the spec.
+        Instruction::PushValue(Datum::EmptyList)
+    ];
+    Ok(instructions)
+}
+
 fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {

@@ -35,7 +35,7 @@ impl Environment {
             match self.parent {
                 Some(ref p) => p.borrow_mut().set(name, datum),
                 None => runtime_error!(
-                    "Attempted to set! an undefined variable: {}", datum)
+                    "Attempted to set! an undefined variable: {}", &name)
             }
         }
     }
