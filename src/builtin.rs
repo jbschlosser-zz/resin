@@ -38,6 +38,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("list->string", Datum::native(native_list_to_string)),
         ("make-hash-table", Datum::native(native_make_hash_table)),
         ("null?", Datum::native(native_null_p)),
+        ("reverse", Datum::native(native_reverse)),
         ("string=?", Datum::native(native_string_equal_p)),
         ("string-append", Datum::native(native_string_append)),
         ("string-contains", Datum::native(native_string_contains)),
@@ -968,6 +969,16 @@ fn native_string_contains(args: &[Datum]) -> Result<Datum, RuntimeError> {
         Some(i) => Ok(Datum::Number(i as i64)),
         None => Ok(Datum::Boolean(false))
     }
+}
+
+fn native_reverse(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 1);
+    match args[0] {
+        Datum::EmptyList => (),
+        Datum::Pair(..) => (),
+        _ => runtime_error!("Expected a list")
+    }
+    Ok(args[0].reverse())
 }
 
 fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
