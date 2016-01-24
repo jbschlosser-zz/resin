@@ -103,3 +103,60 @@ macro_rules! try_unwrap_arg {
         }
     )
 }
+
+#[macro_export]
+macro_rules! unwrap_arg {
+    ($val:expr => i64) => (
+        match $val {
+            Datum::Number(ref v) => Ok(v.clone()),
+            _ => Err(RuntimeError{msg: "Expected number".to_string()})
+        }
+    );
+    ($val:expr => String) => (
+        match $val {
+            Datum::String(ref v) => Ok(v),
+            _ => Err(RuntimeError{msg: "Expected string".to_string()})
+        }
+    );
+    ($val:expr => Symbol) => (
+        match $val {
+            Datum::Symbol(ref v) => Ok(v),
+            _ => Err(RuntimeError{msg: "Expected symbol".to_string()})
+        }
+    );
+    ($val:expr => char) => (
+        match $val {
+            Datum::Character(ref v) => Ok(v.clone()),
+            _ => Err(RuntimeError{msg: "Expected character".to_string()})
+        }
+    );
+    ($val:expr => bool) => (
+        match $val {
+            Datum::Boolean(ref v) => Ok(v.clone()),
+            _ => Err(RuntimeError{msg: "Expected boolean".to_string()})
+        }
+    );
+    ($val:expr => Vec) => (
+        match $val {
+            Datum::Vector(ref v) => Ok(v.clone()),
+            _ => Err(RuntimeError{msg: "Expected vector".to_string()})
+        }
+    );
+    ($val:expr => $t:ty) => (
+        match $val {
+            Datum::Ext(ref e) => {
+                match e.data.downcast_ref::<$t>() {
+                    Some(v) => Ok(v),
+                    None => {
+                        let err_string = format!("Expected {}", stringify!($t));
+                        Err{RuntimeError{msg: err_string}}
+                    }
+                }
+            },
+            _ => {
+                let err_string = format!("Expected {}", stringify!($t));
+                Err{RuntimeError{msg: err_string}}
+            }
+        }
+    )
+}
