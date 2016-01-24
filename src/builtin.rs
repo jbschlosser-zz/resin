@@ -39,6 +39,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
         ("make-hash-table", Datum::native(native_make_hash_table)),
         ("null?", Datum::native(native_null_p)),
         ("string=?", Datum::native(native_string_equal_p)),
+        ("string-append", Datum::native(native_string_append)),
         ("string-contains", Datum::native(native_string_contains)),
         ("string-length", Datum::native(native_string_length)),
         ("string-prefix?", Datum::native(native_string_prefix_p)),
@@ -949,6 +950,14 @@ fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
         Datum::EmptyList => Ok(Datum::Boolean(true)),
         _ => Ok(Datum::Boolean(false))
     }
+}
+
+fn native_string_append(args: &[Datum]) -> Result<Datum, RuntimeError> {
+    expect_args!(args == 2);
+    let mut s1 = try_unwrap_arg!(args[0] => String).clone();
+    let s2 = try_unwrap_arg!(args[1] => String);
+    s1.push_str(s2);
+    Ok(Datum::String(s1))
 }
 
 fn native_string_contains(args: &[Datum]) -> Result<Datum, RuntimeError> {
