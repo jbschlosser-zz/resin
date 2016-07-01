@@ -9,7 +9,7 @@ pub struct Parser<I: Iterator<Item=Token>> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct ParseError {
+pub struct ParseError {
     pub msg: String
 }
 

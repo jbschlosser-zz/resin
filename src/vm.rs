@@ -42,7 +42,7 @@ pub enum DefineType {
 }
 
 #[derive(Debug, Clone)]
-struct StackFrame {
+pub struct StackFrame {
     instructions: Vec<Instruction>,
     pc: usize,
     expr: Datum
