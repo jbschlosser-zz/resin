@@ -146,16 +146,16 @@ macro_rules! unwrap_arg {
         match $val {
             Datum::Ext(ref e) => {
                 match e.data.downcast_ref::<$t>() {
-                    Some(v) => Ok(v),
+                    Some(v) => Ok(v.clone()),
                     None => {
                         let err_string = format!("Expected {}", stringify!($t));
-                        Err{RuntimeError{msg: err_string}}
+                        Err(RuntimeError{msg: err_string})
                     }
                 }
             },
             _ => {
                 let err_string = format!("Expected {}", stringify!($t));
-                Err{RuntimeError{msg: err_string}}
+                Err(RuntimeError{msg: err_string})
             }
         }
     )
