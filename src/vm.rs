@@ -64,13 +64,13 @@ impl VirtualMachine {
         //println!("creating new VM");
         VirtualMachine {call_stack: Vec::new(), val_stack: Vec::new()}
     }
-    pub fn run(&mut self, env: Rc<RefCell<Environment>>, datum: &Datum) ->
+    pub fn run(&mut self, env: Rc<RefCell<Environment>>, datum: Datum) ->
         Result<Datum, (RuntimeError, String)>
     {
         let initial_frame = StackFrame::new(vec![
             Instruction::PushValue(datum.clone()),
             Instruction::Evaluate(env.clone(), true)
-        ], datum.clone());
+        ], datum);
         self.call_stack.push(initial_frame);
         while self.call_stack.len() > 0 {
             // Run next instruction.
@@ -166,7 +166,7 @@ impl VirtualMachine {
                 };
                 let instructions = match procedure {
                     Procedure::SpecialForm(ref special) => {
-                        try!(special.call(env, &args))
+                        try!(special.call(env, args))
                     },
                     Procedure::Native(ref native) => {
                         let mut instructions = Vec::new();
@@ -221,7 +221,7 @@ impl VirtualMachine {
                             }
                             body_instructions.push(
                                 Instruction::PushValue(
-                                    Datum::native(|args: &[Datum]| {
+                                    Datum::native(|args: Vec<Datum>| {
                                         let elements: Vec<_> = args.iter()
                                             .map(|e| e.clone())
                                             .collect();
@@ -266,7 +266,7 @@ impl VirtualMachine {
                 let top = self.val_stack.len();
                 //println!("Calling native with {} args. top: {}", n, top);
                 let args = self.val_stack.split_off(top - n);
-                let result = try!(native.call(&args));
+                let result = try!(native.call(args));
                 self.val_stack.push(result);
             },
             Instruction::Define(env, name, dtype) => {

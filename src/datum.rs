@@ -33,13 +33,13 @@ impl Datum {
     pub fn string(s: &str) -> Datum {
         Datum::String(s.to_string())
     }
-    pub fn special<T: Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+    pub fn special<T: Fn(Rc<RefCell<Environment>>, Vec<Datum>) ->
         Result<Vec<Instruction>, RuntimeError> + 'static>(t: T) -> Datum
     {
         Datum::Procedure(Procedure::SpecialForm(Rc::new(SpecialForm(
             Box::new(t)))))
     }
-    pub fn native<T: Fn(&[Datum]) ->
+    pub fn native<T: Fn(Vec<Datum>) ->
         Result<Datum, RuntimeError> + 'static>(t: T) -> Datum
     {
         Datum::Procedure(Procedure::Native(Rc::new(NativeProcedure(
@@ -205,9 +205,9 @@ pub enum Procedure {
     Scheme(Rc<SchemeProcedure>)
 }
 
-pub struct SpecialForm(Box<Fn(Rc<RefCell<Environment>>, &[Datum]) ->
+pub struct SpecialForm(Box<Fn(Rc<RefCell<Environment>>, Vec<Datum>) ->
     Result<Vec<Instruction>, RuntimeError>>);
-pub struct NativeProcedure(Box<Fn(&[Datum]) ->
+pub struct NativeProcedure(Box<Fn(Vec<Datum>) ->
     Result<Datum, RuntimeError>>);
 pub struct SchemeProcedure {
     pub arg_names: Vec<String>,
@@ -223,7 +223,7 @@ impl fmt::Debug for SpecialForm {
 }
 
 impl SpecialForm {
-    pub fn call(&self, env: Rc<RefCell<Environment>>, args: &[Datum]) ->
+    pub fn call(&self, env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
         Result<Vec<Instruction>, RuntimeError>
     {
         self.0(env, args)
@@ -237,7 +237,7 @@ impl fmt::Debug for NativeProcedure {
 }
 
 impl NativeProcedure {
-    pub fn call(&self, args: &[Datum]) ->
+    pub fn call(&self, args: Vec<Datum>) ->
         Result<Datum, RuntimeError>
     {
         self.0(args)
