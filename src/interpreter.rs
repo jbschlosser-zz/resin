@@ -63,7 +63,7 @@ impl Interpreter {
         // Evaluate.
         let mut res = Datum::EmptyList;
         for datum in data {
-            res = match self.evaluate_datum(datum) {
+            res = match self.evaluate_datum(&datum) {
                 Ok(d) => d,
                 Err((e, trace)) =>
                     return Err(format!("{}\n\nStack trace:\n{}", e.msg, trace))
@@ -71,7 +71,7 @@ impl Interpreter {
         }
         Ok(res)
     }
-    pub fn evaluate_datum(&self, datum: Datum) ->
+    pub fn evaluate_datum(&self, datum: &Datum) ->
         Result<Datum, (RuntimeError, String)>
     {
         let mut vm = VirtualMachine::new();

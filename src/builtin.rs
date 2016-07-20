@@ -62,7 +62,7 @@ pub fn get_builtins() -> Vec<(&'static str, Datum)>
     ]
 }
 
-fn special_form_begin(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_begin(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args >= 1);
@@ -81,7 +81,7 @@ fn special_form_begin(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(instructions)
 }
 
-fn special_form_define(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_define(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args >= 2);
@@ -109,7 +109,7 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
                     let mut lambda_args = vec![formals];
                     lambda_args.extend(body);
                     let mut instructions = try!(
-                        special_form_lambda(env.clone(), lambda_args));
+                        special_form_lambda(env.clone(), &lambda_args));
                     instructions.push(
                         Instruction::Define(env.clone(), name.clone(),
                             DefineType::Define));
@@ -124,7 +124,7 @@ fn special_form_define(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     }
 }
 
-fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args == 2);
@@ -139,7 +139,7 @@ fn special_form_define_syntax(env: Rc<RefCell<Environment>>, args: Vec<Datum>) -
     Ok(instructions)
 }
 
-fn special_form_eval(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_eval(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args == 1);
@@ -151,7 +151,7 @@ fn special_form_eval(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(instructions)
 }
 
-fn special_form_if(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_if(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     if args.len() != 2 && args.len() != 3 {
@@ -177,7 +177,7 @@ fn special_form_if(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(instructions)
 }
 
-fn special_form_lambda(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_lambda(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args >= 2);
@@ -208,7 +208,7 @@ fn special_form_lambda(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(vec![Instruction::PushValue(lambda)])
 }
 
-fn special_form_letrec(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_letrec(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     let usage_str =
@@ -248,14 +248,14 @@ fn special_form_letrec(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(instructions)
 }
 
-fn special_form_quote(_: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_quote(_: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args == 1);
     Ok(vec![Instruction::PushValue(args[0].clone())])
 }
 
-fn special_form_set(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_set(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     expect_args!(args == 2);
@@ -270,7 +270,7 @@ fn special_form_set(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     Ok(instructions)
 }
 
-fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
+fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: &[Datum]) ->
     Result<Vec<Instruction>, RuntimeError>
 {
     let usage_str =
@@ -279,9 +279,9 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
 
     // Parse the keywords list.
     let mut keywords = Vec::new();
-    for keyword in try!(args[0].to_vec()).into_iter() {
+    for keyword in try!(args[0].to_vec()).iter() {
         keywords.push(match keyword {
-            Datum::Symbol(s) => s,
+            &Datum::Symbol(ref s) => s.clone(),
             _ => runtime_error!("{}", &usage_str)
         });
     }
@@ -327,14 +327,14 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
     // it against the patterns. If one matches, it applies the associated
     // template and evaluates the result.
     let func = Datum::special(move |env: Rc<RefCell<Environment>>,
-        args: Vec<Datum>|
+        args: &[Datum]|
     {
         // Verify that a raw un-expanded macro call has been passed.
         if args.len() != 1 { runtime_error!("Expected 1 arg"); }
-        let (macro_name, input) = match &args[0] {
-            &Datum::Pair(ref car, ref cdr) => {
-                match &**car {
-                    &Datum::Symbol(ref s) => (s.clone(), (**cdr).clone()),
+        let (macro_name, input) = match args[0] {
+            Datum::Pair(ref car, ref cdr) => {
+                match **car {
+                    Datum::Symbol(ref s) => (s.clone(), *cdr.clone()),
                     _ => runtime_error!("First element in a pattern must be the macro identifier")
                 }
             },
@@ -346,7 +346,7 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
             pattern_templates.iter()
         {
             // Try to match against this pattern.
-            match match_pattern(&pattern, &input, &keywords) {
+            match match_pattern(pattern, &input, &keywords) {
                 Some(var_env) => {
                     // === MACRO HYGIENE ===
                     // Rename symbols in the template for hygiene.
@@ -364,7 +364,7 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
                         name_mappings.insert(template_sym.clone(), new_name);
                     }
                     name_mappings.insert(macro_name.clone(),macro_name.clone());
-                    let renamed_template = rename_template(template.clone(),
+                    let renamed_template = rename_template(&template,
                         &name_mappings);
                     
                     // The evaluation environment for the template
@@ -398,20 +398,20 @@ fn special_form_syntax_rules(env: Rc<RefCell<Environment>>, args: Vec<Datum>) ->
 }
 
 // Renames symbols in the template according to the given mappings.
-fn rename_template(template: Datum, mappings: &HashMap<String, String>) ->
+fn rename_template(template: &Datum, mappings: &HashMap<String, String>) ->
     Datum
 {
     match template {
-        Datum::Symbol(s) => {
-            match mappings.get(&s) {
+        &Datum::Symbol(ref s) => {
+            match mappings.get(s) {
                 Some(m) => Datum::Symbol(m.clone()),
-                None => Datum::Symbol(s)
+                None => template.clone()
             }
         },
-        Datum::Pair(car, cdr) =>
-            Datum::pair(rename_template(*car, mappings),
-                rename_template(*cdr, mappings)),
-        _ => template
+        &Datum::Pair(ref car, ref cdr) =>
+            Datum::pair(rename_template(&car, mappings),
+                rename_template(&cdr, mappings)),
+        _ => template.clone()
     }
 }
 
@@ -454,8 +454,8 @@ fn verify_pattern_helper(pattern: &Datum, keywords: &[String], list_begin: bool,
             }
 
             // Recursively verify the elements of the pair.
-            try!(verify_pattern_helper(&*car, keywords, true, variables));
-            try!(verify_pattern_helper(&*cdr, keywords, false, variables));
+            try!(verify_pattern_helper(car, keywords, true, variables));
+            try!(verify_pattern_helper(cdr, keywords, false, variables));
             Ok(())
         },
         _ => Ok(())
@@ -492,8 +492,8 @@ fn verify_template_helper(template: &Datum, list_begin: bool,
             }
 
             // Recursively verify the elements of the pair.
-            try!(verify_template_helper(&*car, true, symbols));
-            try!(verify_template_helper(&*cdr, false, symbols));
+            try!(verify_template_helper(car, true, symbols));
+            try!(verify_template_helper(cdr, false, symbols));
             Ok(())
         },
         _ => Ok(())
@@ -518,15 +518,15 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
 {
     match (pattern, input) {
         // Keyword literal.
-        (&Datum::Symbol(ref s), ref inp @ _) if keywords.contains(s) => {
-            match *inp {
+        (&Datum::Symbol(ref s), inp @ _) if keywords.contains(s) => {
+            match inp {
                 &Datum::Symbol(ref t) => s == t,
                 _ => false
             }
         },
         // Pattern variable.
         (&Datum::Symbol(ref s), inp @ _) => {
-            env.define(&s, inp.clone());
+            env.define(s, inp.clone());
             true
         },
         // TODO: Implement this.
@@ -534,10 +534,10 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
         (&Datum::Procedure(..), _) => false,
         (&Datum::SyntaxRule(..), _) => false,
         (&Datum::Pair(ref pcar, ref pcdr), inp @ _) => {
-            let zero_or_more = match &**pcdr {
-                &Datum::Pair(ref next, _) => {
-                    match &**next {
-                        &Datum::Symbol(ref s) if s == "..." => true,
+            let zero_or_more = match **pcdr {
+                Datum::Pair(ref next, _) => {
+                    match **next {
+                        Datum::Symbol(ref s) if s == "..." => true,
                         _ => false
                     }
                 },
@@ -559,7 +559,7 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
 
                     // Check if the list element matches the pattern.
                     let mut sub_env = Environment::new();
-                    if !match_pattern_helper(&*pcar, &*element, keywords,
+                    if !match_pattern_helper(pcar, &element, keywords,
                         &mut sub_env)
                     {
                         return false;
@@ -578,14 +578,14 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
                     }
 
                     // Move to the next element.
-                    current = next;
+                    current = &**next;
                     at_least_one_found = true;
                 }
 
                 // If no matches were found, add an empty list for each
                 // variable in the pattern.
                 if !at_least_one_found {
-                    add_empty_matching(&*pcar, keywords, env);
+                    add_empty_matching(pcar, keywords, env);
                 }
 
                 // Reverse any lists that were built up.
@@ -598,8 +598,8 @@ fn match_pattern_helper(pattern: &Datum, input: &Datum, keywords: &[String],
                 // Continue matching one at a time.
                 match inp {
                     &Datum::Pair(ref icar, ref icdr) => {
-                        match_pattern_helper(&*pcar, &*icar, keywords, env) &&
-                            match_pattern_helper(&*pcdr, &*icdr, keywords, env)
+                        match_pattern_helper(pcar, icar, keywords, env) &&
+                            match_pattern_helper(pcdr, icdr, keywords, env)
                     },
                     _ => false
                 }
@@ -617,8 +617,8 @@ fn add_empty_matching(pattern: &Datum, keywords: &[String],
             env.define(s, Datum::EmptyList);
         },
         &Datum::Pair(ref car, ref cdr) => {
-            add_empty_matching(&*car, keywords, env);
-            add_empty_matching(&*cdr, keywords, env);
+            add_empty_matching(car, keywords, env);
+            add_empty_matching(cdr, keywords, env);
         },
         _ => ()
     }
@@ -638,8 +638,8 @@ fn get_variables_helper(template: &Datum, var_env: &Environment,
             variables.insert(s.clone());
         },
         &Datum::Pair(ref car, ref cdr) => {
-            get_variables_helper(&*car, var_env, variables);
-            get_variables_helper(&*cdr, var_env, variables);
+            get_variables_helper(car, var_env, variables);
+            get_variables_helper(cdr, var_env, variables);
         },
         _ => ()
     }
@@ -653,11 +653,11 @@ fn apply_template(template: &Datum, var_env: &Environment) ->
         &Datum::Symbol(ref s) if var_env.contains(s) =>
             Ok(var_env.get(s).unwrap()),
         &Datum::Pair(ref car, ref cdr) => {
-            let (zero_or_more, after) = match &**cdr {
-                &Datum::Pair(ref next, ref after) => {
-                    match &**next {
-                        &Datum::Symbol(ref s) if s == "..." =>
-                            (true, Some(&**after)),
+            let (zero_or_more, after) = match **cdr {
+                Datum::Pair(ref next, ref after) => {
+                    match **next {
+                        Datum::Symbol(ref s) if s == "..." =>
+                            (true, Some(after)),
                         _ => (false, None)
                     }
                 },
@@ -666,7 +666,7 @@ fn apply_template(template: &Datum, var_env: &Environment) ->
             if zero_or_more {
                 // Determine which variables need to be iterated over for
                 // the ellipses.
-                let variables = get_variables(&*car, var_env);
+                let variables = get_variables(car, var_env);
                 if variables.len() == 0 {
                     runtime_error!("Expected variables before ellipses");
                 }
@@ -683,7 +683,7 @@ fn apply_template(template: &Datum, var_env: &Environment) ->
                     for &(ref var, ref values) in vectors.iter() {
                         sub_env.define(&var, values[i].clone());
                     }
-                    let result = try!(apply_template(&*car, &sub_env));
+                    let result = try!(apply_template(car, &sub_env));
                     reversed = Datum::pair(result, reversed);
                 }
 
@@ -699,30 +699,30 @@ fn apply_template(template: &Datum, var_env: &Environment) ->
                             result = Datum::pair(*a.clone(), result);
                             &*b
                         },
-                        _ => unreachable!("bug in apply_template")
+                        _ => panic!("bug in apply_template")
                     };
                 }
 
                 Ok(result)
             } else {
-                Ok(Datum::pair(try!(apply_template(&*car, var_env)),
-                    try!(apply_template(&*cdr, var_env))))
+                Ok(Datum::pair(try!(apply_template(car, var_env)),
+                    try!(apply_template(cdr, var_env))))
             }
         },
         t @ _ => Ok(t.clone())
     }
 }
 
-fn native_add(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_add(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let mut sum = 0;
     for a in args {
-        sum += try_unwrap_arg!(a => i64);
+        sum += try_unwrap_arg!(*a => i64);
     }
 
     Ok(Datum::Number(sum))
 }
 
-fn native_subtract(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_subtract(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args >= 1);
 
     let mut difference = 0;
@@ -736,7 +736,7 @@ fn native_subtract(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     else { Ok(Datum::Number(difference)) }
 }
 
-fn native_append(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_append(args: &[Datum]) -> Result<Datum, RuntimeError> {
     if args.len() == 0 { return Ok(Datum::EmptyList); }
     let mut result = vec![];
     let last_loc = args.len() - 1;
@@ -749,7 +749,7 @@ fn native_append(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::improper_list(result))
 }
 
-fn native_car(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_car(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     match args[0] {
         Datum::Pair(ref car, _) => Ok(*car.clone()),
@@ -757,7 +757,7 @@ fn native_car(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_cdr(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_cdr(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     match args[0] {
         Datum::Pair(_, ref cdr) => Ok(*cdr.clone()),
@@ -765,12 +765,12 @@ fn native_cdr(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_cons(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_cons(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     Ok(Datum::Pair(Box::new(args[0].clone()), Box::new(args[1].clone())))
 }
 
-fn native_equals(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_equals(args: &[Datum]) -> Result<Datum, RuntimeError> {
     if args.len() == 0 {
         return Ok(Datum::Boolean(true));
     }
@@ -788,16 +788,16 @@ fn native_equals(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::Boolean(res))
 }
 
-fn native_multiply(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_multiply(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let mut product = 1;
     for a in args {
-        product *= try_unwrap_arg!(a => i64);
+        product *= try_unwrap_arg!(*a => i64);
     }
 
     Ok(Datum::Number(product))
 }
 
-fn native_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
 
     match (&args[0], &args[1]) {
@@ -832,9 +832,9 @@ fn native_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
         },
         (&Datum::Pair(ref car1, ref cdr1),&Datum::Pair(ref car2, ref cdr2)) => {
             let car_result = try!(
-                native_equal_p(vec![*car1.clone(), *car2.clone()]));
+                native_equal_p(&vec![*car1.clone(), *car2.clone()]));
             let cdr_result = try!(
-                native_equal_p(vec![*cdr1.clone(), *cdr2.clone()]));
+                native_equal_p(&vec![*cdr1.clone(), *cdr2.clone()]));
             Ok(Datum::Boolean(match (car_result, cdr_result) {
                 (Datum::Boolean(false), _) => false,
                 (_, Datum::Boolean(false)) => false,
@@ -846,7 +846,7 @@ fn native_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
                 return Ok(Datum::Boolean(false));
             }
             for (e1, e2) in v1.borrow().iter().zip(v2.borrow().iter()) {
-                match try!(native_equal_p(vec![e1.clone(), e2.clone()])) {
+                match try!(native_equal_p(&vec![e1.clone(), e2.clone()])) {
                     d @ Datum::Boolean(false) => return Ok(d),
                     _ => ()
                 }
@@ -859,7 +859,7 @@ fn native_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_eqv_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_eqv_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
 
     match (&args[0], &args[1]) {
@@ -900,7 +900,7 @@ fn native_eqv_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_hash_ref(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_hash_ref(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     let h = try_unwrap_arg!(args[0] =>
                             Rc<RefCell<HashMap<Datum, Datum>>>);
@@ -919,7 +919,7 @@ fn native_hash_ref(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_hash_set(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_hash_set(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 3);
     let h = try_unwrap_arg!(args[0] =>
                             Rc<RefCell<HashMap<Datum, Datum>>>);
@@ -936,17 +936,17 @@ fn native_hash_set(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(args[2].clone())
 }
 
-fn native_length(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     Ok(Datum::Number(try!(args[0].to_vec()).len() as i64))
 }
 
-fn native_list(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
     let elements: Vec<_> = args.iter().map(|e| e.clone()).collect();
     Ok(Datum::list(elements))
 }
 
-fn native_list_to_string(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_list_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let list = try!(args[0].to_vec());
     let mut string = String::new();
@@ -957,13 +957,13 @@ fn native_list_to_string(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::String(string))
 }
 
-fn native_make_hash_table(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_make_hash_table(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 0);
     Ok(Datum::ext(Rc::new(RefCell::new(
         HashMap::<Datum, Datum>::new())), "hash-table"))
 }
 
-fn native_null_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_null_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     match args[0] {
         Datum::EmptyList => Ok(Datum::Boolean(true)),
@@ -971,7 +971,7 @@ fn native_null_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_string_append(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_append(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     let mut s1 = try_unwrap_arg!(args[0] => String).clone();
     let s2 = try_unwrap_arg!(args[1] => String);
@@ -979,7 +979,7 @@ fn native_string_append(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::String(s1))
 }
 
-fn native_string_contains(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_contains(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     let s1 = try_unwrap_arg!(args[0] => String).clone();
     let s2 = try_unwrap_arg!(args[1] => String).clone();
@@ -989,7 +989,7 @@ fn native_string_contains(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_reverse(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_reverse(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     match args[0] {
         Datum::EmptyList => (),
@@ -999,7 +999,7 @@ fn native_reverse(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(args[0].reverse())
 }
 
-fn native_string_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_equal_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     match (&args[0], &args[1]) {
         (&Datum::String(ref s1), &Datum::String(ref s2)) =>
@@ -1008,20 +1008,20 @@ fn native_string_equal_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_string_length(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_length(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String);
     Ok(Datum::Number(s.len() as i64))
 }
 
-fn native_string_prefix_p(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_prefix_p(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     let s1 = try_unwrap_arg!(args[0] => String).clone();
     let s2 = try_unwrap_arg!(args[1] => String).clone();
     Ok(Datum::Boolean(s2.starts_with(&s1)))
 }
 
-fn native_string_split(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_split(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 2);
     let string = try_unwrap_arg!(args[0] => String).clone();
     let ch = try_unwrap_arg!(args[1] => char);
@@ -1033,14 +1033,14 @@ fn native_string_split(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::list(results))
 }
 
-fn native_string_to_list(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_to_list(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String).clone();
     let list: Vec<_> = s.chars().map(|c| Datum::Character(c)).collect();
     Ok(Datum::list(list))
 }
 
-fn native_string_to_number(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_to_number(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String).clone();
     match s.parse::<i64>() {
@@ -1049,13 +1049,13 @@ fn native_string_to_number(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     }
 }
 
-fn native_string_to_symbol(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_string_to_symbol(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => String).clone();
     Ok(Datum::Symbol(s))
 }
 
-fn native_substring(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_substring(args: &[Datum]) -> Result<Datum, RuntimeError> {
     if args.len() != 2 && args.len() != 3 {
         runtime_error!("Usage: (substring str start [end])");
     }
@@ -1071,7 +1071,7 @@ fn native_substring(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
     Ok(Datum::String((&string[start..end]).to_string()))
 }
 
-fn native_symbol_to_string(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+fn native_symbol_to_string(args: &[Datum]) -> Result<Datum, RuntimeError> {
     expect_args!(args == 1);
     let s = try_unwrap_arg!(args[0] => Symbol).clone();
     Ok(Datum::String(s))
@@ -1079,7 +1079,7 @@ fn native_symbol_to_string(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
 
 macro_rules! datum_predicate{
     ($dtype:path, $func:ident) => (
-        fn $func(args: Vec<Datum>) -> Result<Datum, RuntimeError> {
+        fn $func(args: &[Datum]) -> Result<Datum, RuntimeError> {
             expect_args!(args == 1);
 
             match args[0] {
